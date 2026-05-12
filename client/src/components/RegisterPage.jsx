@@ -1,35 +1,51 @@
 import React, { useState } from 'react';
-import { users as mockUsers } from '../api/mockDb';
 
-const LoginPage = ({ onLogin, onGoToRegister }) => {
+const RegisterPage = ({ onRegister, onGoToLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [role, setRole] = useState('student');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
 
-    const localUsers = JSON.parse(localStorage.getItem('users') || '[]');
-    const allUsers = [...mockUsers, ...localUsers];
-
-    const match = allUsers.find(
-      (u) => u.username === username && u.password === password && u.role === role
-    );
-
-    if (match) {
-      onLogin({ id: match.id, name: match.name, role: match.role });
-    } else {
-      setError('Invalid username, password, or role.');
+    if (password !== confirm) {
+      setError('Passwords do not match.');
+      return;
     }
+    if (password.length < 4) {
+      setError('Password must be at least 4 characters.');
+      return;
+    }
+
+    const existing = JSON.parse(localStorage.getItem('users') || '[]');
+    if (existing.find((u) => u.username === username)) {
+      setError('Username already taken.');
+      return;
+    }
+
+    const newUser = {
+      id: `u_${Date.now()}`,
+      username,
+      password,
+      role,
+      name: username,
+    };
+
+    localStorage.setItem('users', JSON.stringify([...existing, newUser]));
+    setSuccess('Account created! You can now log in.');
+    onRegister();
   };
 
   return (
     <div className="min-vh-100 d-flex align-items-center justify-content-center bg-light">
       <div className="card shadow" style={{ width: '100%', maxWidth: 420 }}>
         <div className="card-header bg-dark text-white text-center py-3">
-          <h4 className="mb-0">E-Test System &mdash; Login</h4>
+          <h4 className="mb-0">E-Test System &mdash; Register</h4>
         </div>
         <div className="card-body p-4">
           <div className="d-flex justify-content-center gap-3 mb-4">
@@ -55,7 +71,7 @@ const LoginPage = ({ onLogin, onGoToRegister }) => {
               <input
                 type="text"
                 className="form-control"
-                placeholder="Enter username"
+                placeholder="Choose a username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
@@ -66,27 +82,35 @@ const LoginPage = ({ onLogin, onGoToRegister }) => {
               <input
                 type="password"
                 className="form-control"
-                placeholder="Enter password"
+                placeholder="Choose a password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
             </div>
+            <div className="mb-3">
+              <label className="form-label">Confirm Password</label>
+              <input
+                type="password"
+                className="form-control"
+                placeholder="Repeat your password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                required
+              />
+            </div>
 
-            {error && (
-              <div className="alert alert-danger py-2" role="alert">
-                {error}
-              </div>
-            )}
+            {error && <div className="alert alert-danger py-2">{error}</div>}
+            {success && <div className="alert alert-success py-2">{success}</div>}
 
             <button type="submit" className="btn btn-dark w-100 mt-2">
-              Login as {role === 'teacher' ? 'Teacher' : 'Student'}
+              Create Account
             </button>
           </form>
 
           <div className="text-center mt-3">
-            <button className="btn btn-link p-0" onClick={onGoToRegister}>
-              No account yet? Register here
+            <button className="btn btn-link p-0" onClick={onGoToLogin}>
+              Already have an account? Login
             </button>
           </div>
         </div>
@@ -95,4 +119,4 @@ const LoginPage = ({ onLogin, onGoToRegister }) => {
   );
 };
 
-export default LoginPage;
+export default RegisterPage;

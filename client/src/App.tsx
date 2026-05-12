@@ -6,19 +6,34 @@ import TeacherDashboard from './components/TeacherDashboard';
 import StudentPortal from './components/StudentPortal';
 // @ts-ignore - JSX imports in TSX
 import LoginPage from './components/LoginPage';
+// @ts-ignore - JSX imports in TSX
+import RegisterPage from './components/RegisterPage';
 import './App.css';
 
 type Role = 'teacher' | 'student';
+type Screen = 'login' | 'register';
 interface User { id: string; name: string; role: Role; }
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [screen, setScreen] = useState<Screen>('login');
 
   const handleLogin = (loggedInUser: User) => setUser(loggedInUser);
-  const handleLogout = () => setUser(null);
+  const handleLogout = () => { setUser(null); setScreen('login'); };
+  const handleRegistered = () => setScreen('login');
 
   if (!user) {
-    return <LoginPage onLogin={handleLogin} />;
+    return screen === 'register' ? (
+      <RegisterPage
+        onRegister={handleRegistered}
+        onGoToLogin={() => setScreen('login')}
+      />
+    ) : (
+      <LoginPage
+        onLogin={handleLogin}
+        onGoToRegister={() => setScreen('register')}
+      />
+    );
   }
 
   return (
