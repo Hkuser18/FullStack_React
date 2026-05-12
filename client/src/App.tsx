@@ -1,8 +1,8 @@
 
 import { useState } from 'react';
-// @ts-ignore - JSX imports in TSX
+// @ts-expect-error - JSX imports in TSX
 import TeacherDashboard from './components/TeacherDashboard';
-// @ts-ignore - JSX imports in TSX
+// @ts-expect-error - JSX imports in TSX
 import StudentPortal from './components/StudentPortal';
 // @ts-ignore - JSX imports in TSX
 import LoginPage from './components/LoginPage';
