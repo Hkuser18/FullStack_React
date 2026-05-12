@@ -22,3 +22,10 @@ export const studentScores = [
   { studentId: 's1', examId: '1', score: 80 },
   { studentId: 's2', examId: '1', score: 95 }
 ];
+
+export const users = [
+  { id: 'u1', username: 'teacher1', password: 'pass123', role: 'teacher', name: 'Dr. Smith' },
+  { id: 'u2', username: 'teacher2', password: 'pass123', role: 'teacher', name: 'Prof. Cohen' },
+  { id: 'u3', username: 'student1', password: 'pass123', role: 'student', name: 'Alice' },
+  { id: 'u4', username: 'student2', password: 'pass123', role: 'student', name: 'Bob' },
+];
