@@ -4,34 +4,52 @@ import { useState } from 'react';
 import TeacherDashboard from './components/TeacherDashboard';
 // @ts-ignore - JSX imports in TSX
 import StudentPortal from './components/StudentPortal';
+// @ts-ignore - JSX imports in TSX
+import LoginPage from './components/LoginPage';
+// @ts-ignore - JSX imports in TSX
+import RegisterPage from './components/RegisterPage';
 import './App.css';
 
-/**
- * הרכיב המרכזי של האפליקציה, מאפשר מעבר בין תלמיד למורה עם כפתוק.
- * יודע לקרוא לרכיב המתאים לפי המצב שנבחר.
- * הממשק פשוט, ומכיל בעיקר רכיבים זמניים שיממושו מאוחר יותר.
- * @returns - אלמנט JSX שמכיל את התצוגה המתאימה למצב הנבחר (תלמיד או מורה).
- */
+type Role = 'teacher' | 'student';
+type Screen = 'login' | 'register';
+interface User { id: string; name: string; role: Role; }
+
 function App() {
-  const [role, setRole] = useState<'teacher' | 'student'>('teacher');
+  const [user, setUser] = useState<User | null>(null);
+  const [screen, setScreen] = useState<Screen>('login');
+
+  const handleLogin = (loggedInUser: User) => setUser(loggedInUser);
+  const handleLogout = () => { setUser(null); setScreen('login'); };
+  const handleRegistered = () => setScreen('login');
+
+  if (!user) {
+    return screen === 'register' ? (
+      <RegisterPage
+        onRegister={handleRegistered}
+        onGoToLogin={() => setScreen('login')}
+      />
+    ) : (
+      <LoginPage
+        onLogin={handleLogin}
+        onGoToRegister={() => setScreen('register')}
+      />
+    );
+  }
 
   return (
     <div className="min-vh-100 bg-light">
       <nav className="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
         <div className="container">
           <span className="navbar-brand">E-Test System</span>
-          <div className="d-flex">
-            <button
-              className={`btn ${role === 'teacher' ? 'btn-primary' : 'btn-outline-primary'} me-2`}
-              onClick={() => setRole('teacher')}
-            >
-              Teacher View
-            </button>
-            <button
-              className={`btn ${role === 'student' ? 'btn-info' : 'btn-outline-info'} text-white`}
-              onClick={() => setRole('student')}
-            >
-              Student View
+          <div className="d-flex align-items-center gap-3">
+            <span className="text-white">
+              {user.name}&nbsp;
+              <span className={`badge ${user.role === 'teacher' ? 'bg-primary' : 'bg-info'}`}>
+                {user.role}
+              </span>
+            </span>
+            <button className="btn btn-outline-light btn-sm" onClick={handleLogout}>
+              Logout
             </button>
           </div>
         </div>
@@ -39,11 +57,10 @@ function App() {
 
       <main className="container pb-5">
         <div className="text-center mb-5">
-          <h1 className="display-4">Welcome to E-Test</h1>
-          <p className="lead">Current Role: <span className="badge bg-secondary text-capitalize">{role}</span></p>
+          <h1 className="display-4">Welcome, {user.name}</h1>
         </div>
 
-        {role === 'teacher' ? (
+        {user.role === 'teacher' ? (
           <TeacherDashboard />
         ) : (
           <StudentPortal />
