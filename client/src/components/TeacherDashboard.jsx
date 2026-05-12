@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getAllExams } from '../api/examService';
+import QuestionViewer from './QuestionViewer';
 
 
 /**
@@ -11,6 +12,7 @@ import { getAllExams } from '../api/examService';
 const TeacherDashboard = () => {
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [expandedExamId, setExpandedExamId] = useState(null);
 
   // Fetch all exams when the component mounts
   useEffect(() => {
@@ -19,6 +21,11 @@ const TeacherDashboard = () => {
       setLoading(false);
     });
   }, []);
+
+  const toggleExpand = (examId) => {
+    setExpandedExamId(expandedExamId === examId ? null : examId);
+  };
+
   // currently return a basic list.
   return (
     <div className="container mt-4">
@@ -37,12 +44,31 @@ const TeacherDashboard = () => {
           ) : (
             <div className="list-group">
               {exams.map(exam => (
-                <div key={exam.id} className="list-group-item d-flex justify-content-between align-items-center">
-                  <div>
-                    <h5 className="mb-1">{exam.title}</h5>
-                    <small className="text-muted">{exam.questions.length} Questions</small>
+                <div key={exam.id} className="list-group-item">
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <div>
+                      <h5 className="mb-1">{exam.title}</h5>
+                      <small className="text-muted">{exam.questions.length} Questions</small>
+                    </div>
+                    <div>
+                      <button 
+                        className="btn btn-outline-info btn-sm me-2"
+                        onClick={() => toggleExpand(exam.id)}
+                      >
+                        {expandedExamId === exam.id ? 'Hide Questions' : 'View Questions'}
+                      </button>
+                      <button className="btn btn-outline-secondary btn-sm">Edit</button>
+                    </div>
                   </div>
-                  <button className="btn btn-outline-secondary btn-sm">Edit</button>
+                  
+                  {expandedExamId === exam.id && (
+                    <div className="mt-3 p-3 bg-light rounded animate-fade-in">
+                      <h6>Exam Questions:</h6>
+                      {exam.questions.map(q => (
+                        <QuestionViewer key={q.id} question={q} />
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
