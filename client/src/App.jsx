@@ -1,24 +1,15 @@
-
 import { useState } from 'react';
-// @ts-expect-error - JSX imports in TSX
 import TeacherDashboard from './components/TeacherDashboard';
-// @ts-expect-error - JSX imports in TSX
 import StudentPortal from './components/StudentPortal';
-// @ts-ignore - JSX imports in TSX
 import LoginPage from './components/LoginPage';
-// @ts-ignore - JSX imports in TSX
 import RegisterPage from './components/RegisterPage';
 import './App.css';
 
-type Role = 'teacher' | 'student';
-type Screen = 'login' | 'register';
-interface User { id: string; name: string; role: Role; }
-
 function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [screen, setScreen] = useState<Screen>('login');
+  const [user, setUser] = useState(null);
+  const [screen, setScreen] = useState('login');
 
-  const handleLogin = (loggedInUser: User) => setUser(loggedInUser);
+  const handleLogin = (loggedInUser) => setUser(loggedInUser);
   const handleLogout = () => { setUser(null); setScreen('login'); };
   const handleRegistered = () => setScreen('login');
 
