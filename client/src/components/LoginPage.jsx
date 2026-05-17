@@ -1,25 +1,19 @@
 import React, { useState } from 'react';
-import { users as mockUsers } from '../api/mockDb';
-import Storage from '../services/StorageService';
+import Api    from '../api/MockApiService';
 import Notify from '../services/NotifyService';
 import Logger from '../services/LoggerService';
 
 const LoginPage = ({ onLogin, onGoToRegister }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('student');
-  const [error, setError] = useState('');
+  const [role, setRole]         = useState('student');
+  const [error, setError]       = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setError('');
 
-    const localUsers = Storage.get('users', []);
-    const allUsers = [...mockUsers, ...localUsers];
-
-    const match = allUsers.find(
-      (u) => u.username === username && u.password === password && u.role === role
-    );
+    const match = Api.findUserForAuth(username, password, role);
 
     if (match) {
       Logger.info('Login success', { username, role });

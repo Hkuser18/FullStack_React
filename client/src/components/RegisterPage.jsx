@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import Storage from '../services/StorageService';
+import Api    from '../api/MockApiService';
 import Logger from '../services/LoggerService';
+import Notify from '../services/NotifyService';
 
 const RegisterPage = ({ onRegister, onGoToLogin }) => {
   const [username, setUsername] = useState('');
@@ -24,24 +25,17 @@ const RegisterPage = ({ onRegister, onGoToLogin }) => {
       return;
     }
 
-    const existing = Storage.get('users', []);
-    if (existing.find((u) => u.username === username)) {
-      setError('Username already taken.');
-      return;
-    }
-
-    const newUser = {
-      id: `u_${Date.now()}`,
-      username,
-      password,
-      role,
-      name: username,
-    };
-
-    Storage.set('users', [...existing, newUser]);
-    Logger.info('New user registered', { username, role });
-    setSuccess('Account created! You can now log in.');
-    onRegister();
+    Api.addUser({ username, password, role, name: username })
+      .then(() => {
+        Logger.info('New user registered', { username, role });
+        Notify.success('Account created! You can now log in.');
+        setSuccess('Account created! You can now log in.');
+        onRegister();
+      })
+      .catch((err) => {
+        setError(err.message);
+      });
+    return;
   };
 
   return (
