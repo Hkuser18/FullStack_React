@@ -3,6 +3,7 @@ import TeacherDashboard from './components/TeacherDashboard';
 import StudentPortal from './components/StudentPortal';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
+import NotifyToast from './components/shared/NotifyToast';
 import './App.css';
 
 function App() {
@@ -29,6 +30,7 @@ function App() {
 
   return (
     <div className="min-vh-100 bg-light">
+      <NotifyToast />
       <nav className="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
         <div className="container">
           <span className="navbar-brand">E-Test System</span>

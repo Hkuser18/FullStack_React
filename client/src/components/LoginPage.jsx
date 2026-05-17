@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { users as mockUsers } from '../api/mockDb';
+import Storage from '../services/StorageService';
+import Notify from '../services/NotifyService';
+import Logger from '../services/LoggerService';
 
 const LoginPage = ({ onLogin, onGoToRegister }) => {
   const [username, setUsername] = useState('');
@@ -11,7 +14,7 @@ const LoginPage = ({ onLogin, onGoToRegister }) => {
     e.preventDefault();
     setError('');
 
-    const localUsers = JSON.parse(localStorage.getItem('users') || '[]');
+    const localUsers = Storage.get('users', []);
     const allUsers = [...mockUsers, ...localUsers];
 
     const match = allUsers.find(
@@ -19,8 +22,11 @@ const LoginPage = ({ onLogin, onGoToRegister }) => {
     );
 
     if (match) {
+      Logger.info('Login success', { username, role });
+      Notify.success(`Welcome back, ${match.name}!`);
       onLogin({ id: match.id, name: match.name, role: match.role });
     } else {
+      Logger.warn('Login failed', { username, role });
       setError('Invalid username, password, or role.');
     }
   };
