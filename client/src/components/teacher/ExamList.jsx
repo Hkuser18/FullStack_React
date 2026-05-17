@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import Api, { ExamStatus } from '../../api/MockApiService';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
+import QuestionViewer from '../QuestionViewer';
 
 // מיפוי בין סטטוס לסגנון Bootstrap - מרכז את ההגדרות במקום אחד
 const STATUS_CONFIG = {
@@ -18,6 +19,10 @@ const ExamList = ({ user, onNavigate }) => {
   const [exams,         setExams]         = useState([]);
   const [attemptCounts, setAttemptCounts] = useState({});
   const [loading,       setLoading]       = useState(true);
+  const [expandedId,    setExpandedId]    = useState(null);
+
+  const toggleQuestions = (examId) =>
+    setExpandedId(prev => prev === examId ? null : examId);
 
   const load = () => {
     setLoading(true);
@@ -113,10 +118,27 @@ const ExamList = ({ user, onNavigate }) => {
                     <button className="btn btn-sm btn-outline-primary" onClick={() => onNavigate('student-results', { examId: exam.id })}>
                       Results{attempts > 0 ? ` (${attempts})` : ''}
                     </button>
+                    <button
+                      className="btn btn-sm btn-outline-info"
+                      onClick={() => toggleQuestions(exam.id)}
+                    >
+                      {expandedId === exam.id ? 'Hide Questions' : 'View Questions'}
+                    </button>
                   </div>
 
                 </div>
               </div>
+
+              {expandedId === exam.id && (
+                <div className="card-footer bg-light">
+                  <p className="fw-semibold text-secondary small mb-3">
+                    {exam.questions.length} Question{exam.questions.length !== 1 ? 's' : ''} — correct answer highlighted in green
+                  </p>
+                  {exam.questions.map(q => (
+                    <QuestionViewer key={q.id} question={q} />
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
