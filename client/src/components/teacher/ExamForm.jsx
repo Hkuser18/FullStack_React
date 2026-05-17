@@ -1,8 +1,12 @@
+// ExamForm - טופס יצירה ועריכה של מבחן (רכיב אחד לשני מצבים)
+// כאשר examId מועבר - מצב עריכה, ללא examId - מצב יצירה
+// שיתוף הרכיב בין שני מצבים חוסך כפילות קוד ומבטיח אחידות בטופס
 import { useState, useEffect } from 'react';
 import Api from '../../api/MockApiService';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 
+// יוצר שאלה חדשה ריקה עם id ייחודי מבוסס זמן + אקראיות
 const newQuestion = () => ({
   id:            `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
   text:          '',

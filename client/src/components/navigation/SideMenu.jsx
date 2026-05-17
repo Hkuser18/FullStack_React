@@ -1,3 +1,6 @@
+// SideMenu - תפריט צד מבוסס תפקיד (role-based)
+// מורה ותלמיד רואים פריטי תפריט שונים לגמרי - מניעת גישה לא רלוונטית
+// onNavigate מגיע מ-App.jsx - מאפשר ניווט ללא React Router
 const TEACHER_ITEMS = [
   { key: 'my-exams',        label: 'My Exams'        },
   { key: 'create-exam',     label: 'Create Exam'     },

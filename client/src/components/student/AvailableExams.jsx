@@ -1,3 +1,6 @@
+// AvailableExams - רשימת מבחנים זמינים לתלמיד
+// מציג רק מבחנים עם סטטוס 'published' - תלמידים לא רואים טיוטות
+// בדיקת hasAttempted מונעת הגשה כפולה - כל תלמיד מגיש מבחן פעם אחת בלבד
 import { useState, useEffect } from 'react';
 import Api from '../../api/MockApiService';
 import Notify from '../../services/NotifyService';

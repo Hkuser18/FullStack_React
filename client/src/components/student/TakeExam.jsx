@@ -1,3 +1,8 @@
+// TakeExam - רכיב ביצוע המבחן בפועל
+// שלושה שלבים: loading (טעינה) -> taking (מבחן פעיל עם טיימר) -> result (סיכום)
+// useCallback על submit חיוני כי הפונקציה משמשת בתוך useEffect של הטיימר -
+// בלי useCallback היה נוצר closure ישן עם answers מיושנות
+// answers מאוחסנות כמערך - אינדקס = מספר שאלה, ערך = אינדקס האפשרות שנבחרה (null = לא נענה)
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Api from '../../api/MockApiService';
 import Notify from '../../services/NotifyService';

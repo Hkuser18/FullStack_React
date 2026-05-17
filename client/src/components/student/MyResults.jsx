@@ -1,3 +1,6 @@
+// MyResults - היסטוריית המבחנים של התלמיד המחובר
+// ממיין לפי תאריך הגשה מהחדש לישן - הניסיון האחרון תמיד למעלה
+// examsMap ממיר מזהי מבחנים לשמות - נטען במקביל לניסיונות כדי לחסוך זמן
 import { useState, useEffect } from 'react';
 import Api from '../../api/MockApiService';
 import Notify from '../../services/NotifyService';

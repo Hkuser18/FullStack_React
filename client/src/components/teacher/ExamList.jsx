@@ -1,8 +1,13 @@
+// ExamList - דף "המבחנים שלי" למורה
+// מציג את כל המבחנים שיצר המורה המחובר, עם פעולות לפי סטטוס
+// לוגיקת הסטטוסים: draft -> published -> closed (וחזרה ל-published אם צריך)
+// הסיבה לאסור עריכה על מבחן סגור: ציוני תלמידים כבר קיימים - שינוי שאלות יפר את ההגינות
 import { useState, useEffect } from 'react';
 import Api, { ExamStatus } from '../../api/MockApiService';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 
+// מיפוי בין סטטוס לסגנון Bootstrap - מרכז את ההגדרות במקום אחד
 const STATUS_CONFIG = {
   draft:     { badge: 'secondary', label: 'Draft'     },
   published: { badge: 'success',   label: 'Published' },
