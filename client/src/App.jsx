@@ -11,7 +11,9 @@ import ExamList       from './components/teacher/ExamList';
 import ExamForm       from './components/teacher/ExamForm';
 import StudentResults from './components/teacher/StudentResults';
 
-import StudentPortal from './components/StudentPortal';
+import AvailableExams from './components/student/AvailableExams';
+import TakeExam       from './components/student/TakeExam';
+import MyResults      from './components/student/MyResults';
 
 import Logger from './services/LoggerService';
 import Notify from './services/NotifyService';
@@ -81,9 +83,11 @@ function App() {
 
       // Student pages
       case 'available-exams':
-        return <StudentPortal user={user} onNavigate={handleNavigate} />;
+        return <AvailableExams user={user} onNavigate={handleNavigate} />;
+      case 'take-exam':
+        return <TakeExam user={user} examId={pageParams.examId} onNavigate={handleNavigate} />;
       case 'my-results':
-        return <ComingSoon title="My Results" />;
+        return <MyResults user={user} onNavigate={handleNavigate} />;
 
       default:
         return <ComingSoon title="Page not found" />;
