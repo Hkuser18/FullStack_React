@@ -8,7 +8,7 @@ import { getExamById } from '../api/examService';
  * placeholder button to start the exam.
  * @returns a JSX element representing the student portal interface.
  */
-const StudentPortal = () => {
+const StudentPortal = ({ user, onNavigate }) => {
   const [examId, setExamId] = useState('');
   const [exam, setExam] = useState(null);
   const [error, setError] = useState('');

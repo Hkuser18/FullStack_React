@@ -9,7 +9,7 @@ import QuestionViewer from './QuestionViewer';
  * includes placceholders for editing and creating exams, not yet implemented.
  * @returns a JSX element representing the teacher dashboard interface.
  */
-const TeacherDashboard = () => {
+const TeacherDashboard = ({ user, onNavigate }) => {
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedExamId, setExpandedExamId] = useState(null);
