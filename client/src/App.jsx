@@ -1,14 +1,17 @@
 import { useState } from 'react';
 
-import LoginPage      from './components/LoginPage';
-import RegisterPage   from './components/RegisterPage';
-import NavBar         from './components/navigation/NavBar';
-import SideMenu       from './components/navigation/SideMenu';
-import NotifyToast    from './components/shared/NotifyToast';
-import ComingSoon     from './components/shared/ComingSoon';
+import LoginPage    from './components/LoginPage';
+import RegisterPage from './components/RegisterPage';
+import NavBar       from './components/navigation/NavBar';
+import SideMenu     from './components/navigation/SideMenu';
+import NotifyToast  from './components/shared/NotifyToast';
+import ComingSoon   from './components/shared/ComingSoon';
 
-import TeacherDashboard from './components/TeacherDashboard';
-import StudentPortal    from './components/StudentPortal';
+import ExamList       from './components/teacher/ExamList';
+import ExamForm       from './components/teacher/ExamForm';
+import StudentResults from './components/teacher/StudentResults';
+
+import StudentPortal from './components/StudentPortal';
 
 import Logger from './services/LoggerService';
 import Notify from './services/NotifyService';
@@ -20,6 +23,12 @@ function App() {
   const [user,       setUser]   = useState(null);
   const [screen,     setScreen] = useState('login');
   const [activePage, setPage]   = useState(null);
+  const [pageParams, setParams] = useState({});
+
+  const handleNavigate = (page, params = {}) => {
+    setPage(page);
+    setParams(params);
+  };
 
   const handleLogin = (loggedInUser) => {
     setUser(loggedInUser);
@@ -32,6 +41,7 @@ function App() {
     setUser(null);
     setScreen('login');
     setPage(null);
+    setParams({});
     Logger.info('App: user logged out');
   };
 
@@ -58,17 +68,20 @@ function App() {
   // ── Page renderer ─────────────────────────────────────────────────────────
   const renderPage = () => {
     switch (activePage) {
+
       // Teacher pages
       case 'my-exams':
-        return <TeacherDashboard user={user} onNavigate={setPage} />;
+        return <ExamList user={user} onNavigate={handleNavigate} />;
       case 'create-exam':
-        return <ComingSoon title="Create Exam" />;
+        return <ExamForm user={user} onNavigate={handleNavigate} />;
+      case 'edit-exam':
+        return <ExamForm user={user} examId={pageParams.examId} onNavigate={handleNavigate} />;
       case 'student-results':
-        return <ComingSoon title="Student Results" />;
+        return <StudentResults user={user} examId={pageParams.examId} onNavigate={handleNavigate} />;
 
       // Student pages
       case 'available-exams':
-        return <StudentPortal user={user} onNavigate={setPage} />;
+        return <StudentPortal user={user} onNavigate={handleNavigate} />;
       case 'my-results':
         return <ComingSoon title="My Results" />;
 
@@ -87,13 +100,9 @@ function App() {
         <SideMenu
           role={user.role}
           activePage={activePage}
-          onNavigate={setPage}
+          onNavigate={handleNavigate}
         />
-
-        <main
-          className="flex-grow-1 p-4 bg-light"
-          style={{ overflowY: 'auto' }}
-        >
+        <main className="flex-grow-1 p-4 bg-light" style={{ overflowY: 'auto' }}>
           {renderPage()}
         </main>
       </div>
