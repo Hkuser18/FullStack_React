@@ -68,4 +68,30 @@ describe('StudentResults', () => {
     fireEvent.click(screen.getByRole('button', { name: /back/i }));
     expect(onNavigate).toHaveBeenCalledWith('my-exams');
   });
+
+  test('shows Failed badge for a failed attempt', async () => {
+    const failedAttempt = { ...attempt, score: 30, passed: false };
+    Api.getAttemptsByExam.mockResolvedValue([failedAttempt]);
+    render(<StudentResults user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Alice'));
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+  });
+
+  test('shows summary stats when attempts exist', async () => {
+    render(<StudentResults user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Alice'));
+    expect(screen.getByText('Submissions')).toBeInTheDocument();
+    expect(screen.getByText('Avg Score')).toBeInTheDocument();
+    expect(screen.getByText('Pass Rate')).toBeInTheDocument();
+  });
+
+  test('reloads attempts when a different exam is selected', async () => {
+    render(<StudentResults user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Alice'));
+    Api.getAttemptsByExam.mockResolvedValue([]);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'e2' } });
+    await waitFor(() =>
+      expect(screen.getByText(/no submissions yet/i)).toBeInTheDocument()
+    );
+  });
 });

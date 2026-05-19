@@ -75,4 +75,45 @@ describe('ExamList', () => {
     expect(screen.getByRole('button', { name: /publish/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument();
   });
+
+  test('shows Close Exam and Edit buttons for a published exam', async () => {
+    const publishedExam = { ...draftExam, status: 'published' };
+    Api.getExamsByTeacher.mockResolvedValue([publishedExam]);
+    render(<ExamList user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Published'));
+    expect(screen.getByRole('button', { name: /close exam/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument();
+  });
+
+  test('shows only Reopen button for a closed exam', async () => {
+    const closedExam = { ...draftExam, status: 'closed' };
+    Api.getExamsByTeacher.mockResolvedValue([closedExam]);
+    render(<ExamList user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Closed'));
+    expect(screen.getByRole('button', { name: /reopen/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
+  });
+
+  test('calls Api.deleteExam after user confirms the dialog', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    Api.getExamsByTeacher
+      .mockResolvedValueOnce([draftExam])
+      .mockResolvedValueOnce([]);
+    Api.deleteExam.mockResolvedValue(true);
+    render(<ExamList user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Draft Exam'));
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+    expect(Api.deleteExam).toHaveBeenCalledWith('e1');
+    vi.restoreAllMocks();
+  });
+
+  test('does not call Api.deleteExam when user cancels the dialog', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    Api.getExamsByTeacher.mockResolvedValue([draftExam]);
+    render(<ExamList user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Draft Exam'));
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+    expect(Api.deleteExam).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
 });

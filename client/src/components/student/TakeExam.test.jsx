@@ -75,4 +75,36 @@ describe('TakeExam', () => {
     render(<TakeExam user={user} examId="e1" onNavigate={onNavigate} />);
     await waitFor(() => expect(onNavigate).toHaveBeenCalledWith('available-exams'));
   });
+
+  test('shows fail screen when exam is not passed', async () => {
+    Api.getExamById.mockResolvedValue(exam);
+    Api.submitAttempt.mockResolvedValue({ score: 20, passed: false });
+    render(<TakeExam user={user} examId="e1" onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Math Quiz'));
+    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    await waitFor(() =>
+      expect(screen.getByText(/you did not pass/i)).toBeInTheDocument()
+    );
+    expect(screen.getByText('20%')).toBeInTheDocument();
+  });
+
+  test('Back to Exams and View All My Results buttons appear on result screen', async () => {
+    Api.getExamById.mockResolvedValue(exam);
+    Api.submitAttempt.mockResolvedValue({ score: 100, passed: true });
+    render(<TakeExam user={user} examId="e1" onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Math Quiz'));
+    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    await waitFor(() => screen.getByText(/congratulations/i));
+    expect(screen.getByRole('button', { name: /back to exams/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /view all my results/i })).toBeInTheDocument();
+  });
+
+  test('Abandon button calls onNavigate to available-exams', async () => {
+    Api.getExamById.mockResolvedValue(exam);
+    const onNavigate = vi.fn();
+    render(<TakeExam user={user} examId="e1" onNavigate={onNavigate} />);
+    await waitFor(() => screen.getByText('Math Quiz'));
+    fireEvent.click(screen.getByRole('button', { name: /abandon/i }));
+    expect(onNavigate).toHaveBeenCalledWith('available-exams');
+  });
 });
