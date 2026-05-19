@@ -15,6 +15,7 @@ import AvailableExams from './components/student/AvailableExams';
 import TakeExam       from './components/student/TakeExam';
 import MyResults      from './components/student/MyResults';
 
+import Auth   from './services/AuthService';
 import Logger from './services/LoggerService';
 import Notify from './services/NotifyService';
 import './App.css';
@@ -22,9 +23,12 @@ import './App.css';
 const DEFAULT_PAGE = { teacher: 'my-exams', student: 'available-exams' };
 
 function App() {
-  const [user,       setUser]   = useState(null);
+  const [user,       setUser]   = useState(() => Auth.getCurrentUser());
   const [screen,     setScreen] = useState('login');
-  const [activePage, setPage]   = useState(null);
+  const [activePage, setPage]   = useState(() => {
+    const u = Auth.getCurrentUser();
+    return u ? DEFAULT_PAGE[u.role] : null;
+  });
   const [pageParams, setParams] = useState({});
 
   const handleNavigate = (page, params = {}) => {
@@ -39,6 +43,7 @@ function App() {
   };
 
   const handleLogout = () => {
+    Auth.logout();
     Notify.info('You have been logged out.');
     setUser(null);
     setScreen('login');

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Api    from '../api/MockApiService';
+import Auth   from '../services/AuthService';
 import Notify from '../services/NotifyService';
 import Logger from '../services/LoggerService';
 
@@ -13,12 +13,11 @@ const LoginPage = ({ onLogin, onGoToRegister }) => {
     e.preventDefault();
     setError('');
 
-    const match = Api.findUserForAuth(username, password, role);
+    const user = Auth.login(username, password, role);
 
-    if (match) {
-      Logger.info('Login success', { username, role });
-      Notify.success(`Welcome back, ${match.name}!`);
-      onLogin({ id: match.id, name: match.name, role: match.role });
+    if (user) {
+      Notify.success(`Welcome back, ${user.name}!`);
+      onLogin(user);
     } else {
       Logger.warn('Login failed', { username, role });
       setError('Invalid username, password, or role.');

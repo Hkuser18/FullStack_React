@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import Api    from '../api/MockApiService';
+import Auth   from '../services/AuthService';
 import Logger from '../services/LoggerService';
 import Notify from '../services/NotifyService';
 
@@ -25,9 +25,8 @@ const RegisterPage = ({ onRegister, onGoToLogin }) => {
       return;
     }
 
-    Api.addUser({ username, password, role, name: username })
+    Auth.register({ username, password, role, name: username })
       .then(() => {
-        Logger.info('New user registered', { username, role });
         Notify.success('Account created! You can now log in.');
         setSuccess('Account created! You can now log in.');
         onRegister();
