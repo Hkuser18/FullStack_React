@@ -1,26 +1,25 @@
 import React, { useState } from 'react';
-import { users as mockUsers } from '../api/mockDb';
+import Auth   from '../services/AuthService';
+import Notify from '../services/NotifyService';
+import Logger from '../services/LoggerService';
 
 const LoginPage = ({ onLogin, onGoToRegister }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('student');
-  const [error, setError] = useState('');
+  const [role, setRole]         = useState('student');
+  const [error, setError]       = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setError('');
 
-    const localUsers = JSON.parse(localStorage.getItem('users') || '[]');
-    const allUsers = [...mockUsers, ...localUsers];
+    const user = Auth.login(username, password, role);
 
-    const match = allUsers.find(
-      (u) => u.username === username && u.password === password && u.role === role
-    );
-
-    if (match) {
-      onLogin({ id: match.id, name: match.name, role: match.role });
+    if (user) {
+      Notify.success(`Welcome back, ${user.name}!`);
+      onLogin(user);
     } else {
+      Logger.warn('Login failed', { username, role });
       setError('Invalid username, password, or role.');
     }
   };

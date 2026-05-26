@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import Auth   from '../services/AuthService';
+import Logger from '../services/LoggerService';
+import Notify from '../services/NotifyService';
 
 const RegisterPage = ({ onRegister, onGoToLogin }) => {
   const [username, setUsername] = useState('');
@@ -22,23 +25,16 @@ const RegisterPage = ({ onRegister, onGoToLogin }) => {
       return;
     }
 
-    const existing = JSON.parse(localStorage.getItem('users') || '[]');
-    if (existing.find((u) => u.username === username)) {
-      setError('Username already taken.');
-      return;
-    }
-
-    const newUser = {
-      id: `u_${Date.now()}`,
-      username,
-      password,
-      role,
-      name: username,
-    };
-
-    localStorage.setItem('users', JSON.stringify([...existing, newUser]));
-    setSuccess('Account created! You can now log in.');
-    onRegister();
+    Auth.register({ username, password, role, name: username })
+      .then(() => {
+        Notify.success('Account created! You can now log in.');
+        setSuccess('Account created! You can now log in.');
+        onRegister();
+      })
+      .catch((err) => {
+        setError(err.message);
+      });
+    return;
   };
 
   return (
