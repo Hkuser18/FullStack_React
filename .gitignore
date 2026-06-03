@@ -1,1 +1,5 @@
 .hintrc
+.env
+.env.*
+!.env.example
+
