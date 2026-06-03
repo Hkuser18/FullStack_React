@@ -1,14 +1,36 @@
-// In-memory database — seeded with the same data as the React mock
-// Data lives only for the lifetime of the server process
+import pg from 'pg';
+import dotenv from 'dotenv';
+dotenv.config();
+const { Pool } = pg;
 
-const SEED_USERS = [
+const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/exam_app';
+
+const pool = new Pool({
+  connectionString,
+  // Render (and any non-localhost host) requires SSL
+  ssl: connectionString.includes('localhost')
+    ? false
+    : { rejectUnauthorized: false },
+});
+
+pool.query('SELECT NOW()', (err, res) => {
+  if (err) {
+    console.error('❌ Database connection failed:', err.message);
+  } else {
+    console.log('🔌 Database connected successfully at:', res.rows[0].now);
+  }
+});
+
+// ── Seed data (used by /api/db/reset) ─────────────────────────────────────────
+
+export const SEED_USERS = [
   { id: 'u1', username: 'teacher1', password: 'pass123', role: 'teacher', name: 'Dr. Smith' },
   { id: 'u2', username: 'teacher2', password: 'pass123', role: 'teacher', name: 'Prof. Cohen' },
   { id: 'u3', username: 'student1', password: 'pass123', role: 'student', name: 'Alice' },
   { id: 'u4', username: 'student2', password: 'pass123', role: 'student', name: 'Bob' },
 ];
 
-const SEED_EXAMS = [
+export const SEED_EXAMS = [
   {
     id: 'e1', title: 'JavaScript Basics', description: 'Test your knowledge of core JS concepts.',
     status: 'published', createdBy: 'u1', duration: 20, passingScore: 60,
@@ -51,26 +73,10 @@ const SEED_EXAMS = [
   },
 ];
 
-const SEED_ATTEMPTS = [
+export const SEED_ATTEMPTS = [
   { id: 'a1', examId: 'e1', studentId: 'u3', answers: [0, 2, 2, 2], score: 100, passed: true,  startedAt: '2026-02-01T09:00:00.000Z', submittedAt: '2026-02-01T09:14:00.000Z' },
   { id: 'a2', examId: 'e1', studentId: 'u4', answers: [1, 2, 0, 1], score: 25,  passed: false, startedAt: '2026-02-01T10:00:00.000Z', submittedAt: '2026-02-01T10:18:00.000Z' },
   { id: 'a3', examId: 'e2', studentId: 'u3', answers: [1, 0, 1],    score: 100, passed: true,  startedAt: '2026-02-05T09:00:00.000Z', submittedAt: '2026-02-05T09:20:00.000Z' },
 ];
 
-function deepClone(data) {
-  return JSON.parse(JSON.stringify(data));
-}
-
-const db = {
-  users:    deepClone(SEED_USERS),
-  exams:    deepClone(SEED_EXAMS),
-  attempts: deepClone(SEED_ATTEMPTS),
-
-  reset() {
-    this.users    = deepClone(SEED_USERS);
-    this.exams    = deepClone(SEED_EXAMS);
-    this.attempts = deepClone(SEED_ATTEMPTS);
-  },
-};
-
-module.exports = db;
+export default pool;

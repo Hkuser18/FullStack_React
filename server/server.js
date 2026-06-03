@@ -1,153 +1,255 @@
-const express = require('express');
-const cors    = require('cors');
-const db      = require('./db');
+import express from 'express';
+import cors from 'cors';
+import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS } from './db.js';
 
 const app  = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3002;
 
 const EXAM_STATUSES = ['draft', 'published', 'closed'];
 
-app.use(cors({ origin: 'http://localhost:5173' }));
+app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json());
+
+// Wraps async route handlers so thrown errors reach the error middleware
+const wrap = fn => (req, res, next) => fn(req, res, next).catch(next);
+
+// ── Reusable column lists (camelCase aliases match the mock API shape) ─────────
+
+const EXAM_COLS = `
+  id, title, description, status,
+  created_by    AS "createdBy",
+  duration,
+  passing_score AS "passingScore",
+  created_at    AS "createdAt",
+  questions
+`;
+
+const ATTEMPT_COLS = `
+  id,
+  exam_id      AS "examId",
+  student_id   AS "studentId",
+  answers, score, passed,
+  started_at   AS "startedAt",
+  submitted_at AS "submittedAt"
+`;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', wrap(async (req, res) => {
   const { username, password, role } = req.body;
-  const match = db.users.find(
-    u => u.username === username && u.password === password && u.role === role
+  const { rows } = await pool.query(
+    `SELECT id, username, role, name FROM users
+     WHERE username=$1 AND password=$2 AND role=$3`,
+    [username, password, role]
   );
-  if (!match) return res.status(401).json({ error: 'Invalid credentials' });
-  const { password: _, ...user } = match;
-  res.json(user);
-});
+  if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
+  res.json(rows[0]);
+}));
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', wrap(async (req, res) => {
   const { username, password, name, role } = req.body;
-  if (db.users.find(u => u.username === username))
-    return res.status(409).json({ error: 'Username already taken' });
-  const newUser = { id: `u_${Date.now()}`, username, password, name, role };
-  db.users.push(newUser);
-  const { password: _, ...safe } = newUser;
-  res.status(201).json(safe);
-});
+  const dup = await pool.query('SELECT id FROM users WHERE username=$1', [username]);
+  if (dup.rows.length) return res.status(409).json({ error: 'Username already taken' });
+  const id = `u_${Date.now()}`;
+  const { rows } = await pool.query(
+    `INSERT INTO users (id, username, password, role, name)
+     VALUES ($1,$2,$3,$4,$5)
+     RETURNING id, username, role, name`,
+    [id, username, password, role, name]
+  );
+  res.status(201).json(rows[0]);
+}));
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
-app.get('/api/users', (_req, res) => {
-  res.json(db.users.map(({ password, ...u }) => u));
-});
+app.get('/api/users', wrap(async (_req, res) => {
+  const { rows } = await pool.query('SELECT id, username, role, name FROM users');
+  res.json(rows);
+}));
 
-app.get('/api/users/:id', (req, res) => {
-  const user = db.users.find(u => u.id === req.params.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const { password, ...safe } = user;
-  res.json(safe);
-});
+app.get('/api/users/:id', wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT id, username, role, name FROM users WHERE id=$1',
+    [req.params.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'User not found' });
+  res.json(rows[0]);
+}));
 
 // ── Exams ─────────────────────────────────────────────────────────────────────
+// NOTE: specific routes (/published, /teacher/:id) must come before /:id
 
-app.get('/api/exams', (_req, res) => {
-  res.json(db.exams);
-});
+app.get('/api/exams', wrap(async (_req, res) => {
+  const { rows } = await pool.query(`SELECT ${EXAM_COLS} FROM exams`);
+  res.json(rows);
+}));
 
-app.get('/api/exams/published', (_req, res) => {
-  res.json(db.exams.filter(e => e.status === 'published'));
-});
+app.get('/api/exams/published', wrap(async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT ${EXAM_COLS} FROM exams WHERE status='published'`
+  );
+  res.json(rows);
+}));
 
-app.get('/api/exams/teacher/:teacherId', (req, res) => {
-  res.json(db.exams.filter(e => e.createdBy === req.params.teacherId));
-});
+app.get('/api/exams/teacher/:teacherId', wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT ${EXAM_COLS} FROM exams WHERE created_by=$1`,
+    [req.params.teacherId]
+  );
+  res.json(rows);
+}));
 
-app.get('/api/exams/:id', (req, res) => {
-  const exam = db.exams.find(e => e.id === req.params.id);
-  if (!exam) return res.status(404).json({ error: 'Exam not found' });
-  res.json(exam);
-});
+app.get('/api/exams/:id', wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT ${EXAM_COLS} FROM exams WHERE id=$1`,
+    [req.params.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Exam not found' });
+  res.json(rows[0]);
+}));
 
-app.post('/api/exams', (req, res) => {
-  const { id: _id, status: _s, createdAt: _c, ...data } = req.body;
-  const newExam = {
-    title: 'Untitled Exam', description: '', duration: 30, passingScore: 60,
-    ...data,
-    id:        `e_${Date.now()}`,
-    status:    'draft',
-    createdAt: new Date().toISOString(),
-    questions: data.questions ?? [],
-  };
-  db.exams.push(newExam);
-  res.status(201).json(newExam);
-});
+app.post('/api/exams', wrap(async (req, res) => {
+  const {
+    title = 'Untitled Exam', description = '', duration = 30,
+    passingScore = 60, createdBy, questions = [],
+  } = req.body;
+  const id = `e_${Date.now()}`;
+  const { rows } = await pool.query(
+    `INSERT INTO exams (id, title, description, status, created_by, duration, passing_score, questions)
+     VALUES ($1,$2,$3,'draft',$4,$5,$6,$7)
+     RETURNING ${EXAM_COLS}`,
+    [id, title, description, createdBy, duration, passingScore, JSON.stringify(questions)]
+  );
+  res.status(201).json(rows[0]);
+}));
 
-app.put('/api/exams/:id', (req, res) => {
-  const idx = db.exams.findIndex(e => e.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Exam not found' });
-  const { id: _id, status, createdBy, createdAt, ...safe } = req.body;
-  db.exams[idx] = { ...db.exams[idx], ...safe };
-  res.json(db.exams[idx]);
-});
+app.put('/api/exams/:id', wrap(async (req, res) => {
+  const { title, description, duration, passingScore, questions } = req.body;
+  const { rows } = await pool.query(
+    `UPDATE exams
+     SET title=$1, description=$2, duration=$3, passing_score=$4, questions=$5
+     WHERE id=$6
+     RETURNING ${EXAM_COLS}`,
+    [title, description, duration, passingScore, JSON.stringify(questions), req.params.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Exam not found' });
+  res.json(rows[0]);
+}));
 
-app.delete('/api/exams/:id', (req, res) => {
-  const idx = db.exams.findIndex(e => e.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Exam not found' });
-  db.exams.splice(idx, 1);
+app.delete('/api/exams/:id', wrap(async (req, res) => {
+  const { rowCount } = await pool.query('DELETE FROM exams WHERE id=$1', [req.params.id]);
+  if (!rowCount) return res.status(404).json({ error: 'Exam not found' });
   res.json({ success: true });
-});
+}));
 
-app.patch('/api/exams/:id/status', (req, res) => {
+app.patch('/api/exams/:id/status', wrap(async (req, res) => {
   const { status } = req.body;
   if (!EXAM_STATUSES.includes(status))
     return res.status(400).json({ error: `Invalid status: ${status}` });
-  const idx = db.exams.findIndex(e => e.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Exam not found' });
-  db.exams[idx].status = status;
-  res.json(db.exams[idx]);
-});
+  const { rows } = await pool.query(
+    `UPDATE exams SET status=$1 WHERE id=$2 RETURNING ${EXAM_COLS}`,
+    [status, req.params.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Exam not found' });
+  res.json(rows[0]);
+}));
 
 // ── Attempts ──────────────────────────────────────────────────────────────────
 
-app.post('/api/attempts', (req, res) => {
-  const data = req.body;
-  const exam = db.exams.find(e => e.id === data.examId);
-  if (!exam) return res.status(404).json({ error: 'Exam not found' });
+app.post('/api/attempts', wrap(async (req, res) => {
+  const { examId, studentId, answers, startedAt } = req.body;
 
-  const correct = data.answers.reduce(
-    (acc, ans, i) => acc + (ans === exam.questions[i]?.correctOption ? 1 : 0), 0
+  const { rows: exRows } = await pool.query(
+    'SELECT questions, passing_score FROM exams WHERE id=$1',
+    [examId]
   );
-  const score  = Math.round((correct / exam.questions.length) * 100);
-  const passed = score >= (exam.passingScore ?? 60);
+  if (!exRows.length) return res.status(404).json({ error: 'Exam not found' });
 
-  const attempt = {
-    ...data,
-    id:          `a_${Date.now()}`,
-    score,
-    passed,
-    submittedAt: new Date().toISOString(),
-  };
-  db.attempts.push(attempt);
-  res.status(201).json(attempt);
-});
+  const { questions, passing_score } = exRows[0];
+  const correct = answers.reduce(
+    (acc, ans, i) => acc + (ans === questions[i]?.correctOption ? 1 : 0), 0
+  );
+  const score  = Math.round((correct / questions.length) * 100);
+  const passed = score >= passing_score;
 
-app.get('/api/attempts/student/:studentId', (req, res) => {
-  res.json(db.attempts.filter(a => a.studentId === req.params.studentId));
-});
+  const id = `a_${Date.now()}`;
+  const { rows } = await pool.query(
+    `INSERT INTO attempts (id, exam_id, student_id, answers, score, passed, started_at, submitted_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+     RETURNING ${ATTEMPT_COLS}`,
+    [id, examId, studentId, JSON.stringify(answers), score, passed, startedAt]
+  );
+  res.status(201).json(rows[0]);
+}));
 
-app.get('/api/attempts/exam/:examId', (req, res) => {
-  res.json(db.attempts.filter(a => a.examId === req.params.examId));
-});
+app.get('/api/attempts/student/:studentId', wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT ${ATTEMPT_COLS} FROM attempts WHERE student_id=$1`,
+    [req.params.studentId]
+  );
+  res.json(rows);
+}));
 
-app.get('/api/attempts/check/:studentId/:examId', (req, res) => {
+app.get('/api/attempts/exam/:examId', wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT ${ATTEMPT_COLS} FROM attempts WHERE exam_id=$1`,
+    [req.params.examId]
+  );
+  res.json(rows);
+}));
+
+app.get('/api/attempts/check/:studentId/:examId', wrap(async (req, res) => {
   const { studentId, examId } = req.params;
-  res.json({ attempted: db.attempts.some(a => a.studentId === studentId && a.examId === examId) });
-});
+  const { rows } = await pool.query(
+    'SELECT 1 FROM attempts WHERE student_id=$1 AND exam_id=$2 LIMIT 1',
+    [studentId, examId]
+  );
+  res.json({ attempted: rows.length > 0 });
+}));
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
-app.post('/api/db/reset', (_req, res) => {
-  db.reset();
-  res.json({ success: true });
+app.post('/api/db/reset', wrap(async (_req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('TRUNCATE attempts, exams, users RESTART IDENTITY CASCADE');
+    for (const u of SEED_USERS)
+      await client.query(
+        'INSERT INTO users (id, username, password, role, name) VALUES ($1,$2,$3,$4,$5)',
+        [u.id, u.username, u.password, u.role, u.name]
+      );
+    for (const e of SEED_EXAMS)
+      await client.query(
+        `INSERT INTO exams (id, title, description, status, created_by, duration, passing_score, created_at, questions)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [e.id, e.title, e.description, e.status, e.createdBy,
+         e.duration, e.passingScore, e.createdAt, JSON.stringify(e.questions)]
+      );
+    for (const a of SEED_ATTEMPTS)
+      await client.query(
+        `INSERT INTO attempts (id, exam_id, student_id, answers, score, passed, started_at, submitted_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [a.id, a.examId, a.studentId, JSON.stringify(a.answers),
+         a.score, a.passed, a.startedAt, a.submittedAt]
+      );
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}));
+
+// ── Error handler ─────────────────────────────────────────────────────────────
+
+app.use((err, _req, res, _next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, () => {
-  console.log(`ExamsApp server running at http://localhost:${PORT}`);
+  console.log(`ExamsApp server running on port ${PORT}`);
 });
