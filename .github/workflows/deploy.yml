@@ -1,0 +1,60 @@
+name: Deploy Static Site to GitHub Pages
+
+# Trigger the workflow when pushing to the configured branch
+on:
+  push:
+    branches: ["dev"] # use dev as base
+  
+  # This allows you to run the workflow manually from the Actions tab
+  workflow_dispatch: 
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20 # Change this to match your project's target Node version
+          cache: 'npm'
+          cache-dependency-path: './client/package-lock.json' 
+
+      # If your package.json is in the root, leave as is. 
+      - name: Install dependencies
+        run: npm install
+        working-directory: ./client 
+
+      - name: Build the project
+        run: npm run build
+        working-directory: ./client
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # This tells GitHub Pages exactly which directory to serve the index.html from
+          path: './client/dist' 
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
