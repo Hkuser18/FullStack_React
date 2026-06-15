@@ -32,8 +32,22 @@ CREATE TABLE IF NOT EXISTS attempts (
   submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS question_bank (
+  id             TEXT        PRIMARY KEY,
+  text           TEXT        NOT NULL,
+  type           TEXT        NOT NULL DEFAULT 'multiple-choice'
+                             CHECK (type IN ('multiple-choice', 'open')),
+  options        JSONB,
+  correct_option INT,
+  keywords       JSONB,
+  topic          TEXT        NOT NULL DEFAULT '',
+  created_by     TEXT        NOT NULL REFERENCES users(id),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ── Indexes ───────────────────────────────────────────────────────────────────
 
+CREATE INDEX IF NOT EXISTS idx_question_bank_created_by ON question_bank(created_by);
 CREATE INDEX IF NOT EXISTS idx_exams_created_by  ON exams(created_by);
 CREATE INDEX IF NOT EXISTS idx_exams_status      ON exams(status);
 CREATE INDEX IF NOT EXISTS idx_attempts_exam     ON attempts(exam_id);

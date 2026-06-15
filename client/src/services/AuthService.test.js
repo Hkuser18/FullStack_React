@@ -1,51 +1,51 @@
 import Auth from './AuthService';
-import Api from '../api/MockApiService';
+import Api from '../api';
 import Storage from './StorageService';
 
-vi.mock('../api/MockApiService', () => ({
-  default: { findUserForAuth: vi.fn(), addUser: vi.fn() },
+vi.mock('../api', () => ({
+  default: { login: vi.fn(), addUser: vi.fn() },
 }));
 vi.mock('./StorageService', () => ({
   default: { get: vi.fn(), set: vi.fn(), remove: vi.fn() },
 }));
 vi.mock('./LoggerService', () => ({
-  default: { info: vi.fn() },
+  default: { info: vi.fn(), warn: vi.fn() },
 }));
 
-const seedUser = { id: 'u1', name: 'Alice', role: 'student', username: 'alice', password: 'pass' };
+const safeUser = { id: 'u1', name: 'Alice', role: 'student', username: 'alice' };
 
 describe('AuthService', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  test('login returns a user object on valid credentials', () => {
-    Api.findUserForAuth.mockReturnValue(seedUser);
-    const result = Auth.login('alice', 'pass', 'student');
+  test('login returns a session object on valid credentials', async () => {
+    Api.login.mockResolvedValue(safeUser);
+    const result = await Auth.login('alice', 'pass', 'student');
     expect(result).toEqual({ id: 'u1', name: 'Alice', role: 'student' });
   });
 
-  test('login strips the password from the returned user', () => {
-    Api.findUserForAuth.mockReturnValue(seedUser);
-    const result = Auth.login('alice', 'pass', 'student');
-    expect(result).not.toHaveProperty('password');
+  test('login strips username from the returned session', async () => {
+    Api.login.mockResolvedValue(safeUser);
+    const result = await Auth.login('alice', 'pass', 'student');
+    expect(result).not.toHaveProperty('username');
   });
 
-  test('login persists the session to storage', () => {
-    Api.findUserForAuth.mockReturnValue(seedUser);
-    Auth.login('alice', 'pass', 'student');
+  test('login persists the session to storage', async () => {
+    Api.login.mockResolvedValue(safeUser);
+    await Auth.login('alice', 'pass', 'student');
     expect(Storage.set).toHaveBeenCalledWith(
       'auth_session',
       { id: 'u1', name: 'Alice', role: 'student' }
     );
   });
 
-  test('login returns null for invalid credentials', () => {
-    Api.findUserForAuth.mockReturnValue(null);
-    expect(Auth.login('bad', 'bad', 'student')).toBeNull();
+  test('login throws on invalid credentials', async () => {
+    Api.login.mockRejectedValue(new Error('Invalid credentials'));
+    await expect(Auth.login('bad', 'bad', 'student')).rejects.toThrow('Invalid credentials');
   });
 
-  test('login does not persist session on failure', () => {
-    Api.findUserForAuth.mockReturnValue(null);
-    Auth.login('bad', 'bad', 'student');
+  test('login does not persist session on failure', async () => {
+    Api.login.mockRejectedValue(new Error('Invalid credentials'));
+    await Auth.login('bad', 'bad', 'student').catch(() => {});
     expect(Storage.set).not.toHaveBeenCalled();
   });
 

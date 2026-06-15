@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS } from './db.js';
+import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS, SEED_QUESTION_BANK } from './db.js';
 
 const app  = express();
 const PORT = process.env.PORT || 3002;
@@ -14,6 +14,14 @@ app.use(express.json());
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next);
 
 // ── Reusable column lists (camelCase aliases match the mock API shape) ─────────
+
+const QB_COLS = `
+  id, text, type, options,
+  correct_option AS "correctOption",
+  keywords, topic,
+  created_by AS "createdBy",
+  created_at AS "createdAt"
+`;
 
 const EXAM_COLS = `
   id, title, description, status,
@@ -166,9 +174,15 @@ app.post('/api/attempts', wrap(async (req, res) => {
   if (!exRows.length) return res.status(404).json({ error: 'Exam not found' });
 
   const { questions, passing_score } = exRows[0];
-  const correct = answers.reduce(
-    (acc, ans, i) => acc + (ans === questions[i]?.correctOption ? 1 : 0), 0
-  );
+  const correct = answers.reduce((acc, ans, i) => {
+    const q = questions[i];
+    if (!q) return acc;
+    if (q.type === 'open') {
+      const text = String(ans ?? '').toLowerCase();
+      return acc + ((q.keywords ?? []).some(kw => text.includes(kw.toLowerCase())) ? 1 : 0);
+    }
+    return acc + (ans === q.correctOption ? 1 : 0);
+  }, 0);
   const score  = Math.round((correct / questions.length) * 100);
   const passed = score >= passing_score;
 
@@ -207,13 +221,50 @@ app.get('/api/attempts/check/:studentId/:examId', wrap(async (req, res) => {
   res.json({ attempted: rows.length > 0 });
 }));
 
+// ── Question Bank ─────────────────────────────────────────────────────────────
+
+app.get('/api/questions', wrap(async (_req, res) => {
+  const { rows } = await pool.query(`SELECT ${QB_COLS} FROM question_bank ORDER BY created_at DESC`);
+  res.json(rows);
+}));
+
+app.get('/api/questions/teacher/:teacherId', wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT ${QB_COLS} FROM question_bank WHERE created_by=$1 ORDER BY created_at DESC`,
+    [req.params.teacherId]
+  );
+  res.json(rows);
+}));
+
+app.post('/api/questions', wrap(async (req, res) => {
+  const { text, type = 'multiple-choice', options, correctOption, keywords, topic = '', createdBy } = req.body;
+  const id = `qb_${Date.now()}`;
+  const { rows } = await pool.query(
+    `INSERT INTO question_bank (id, text, type, options, correct_option, keywords, topic, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     RETURNING ${QB_COLS}`,
+    [id, text, type,
+     options ? JSON.stringify(options) : null,
+     correctOption ?? null,
+     keywords ? JSON.stringify(keywords) : null,
+     topic, createdBy]
+  );
+  res.status(201).json(rows[0]);
+}));
+
+app.delete('/api/questions/:id', wrap(async (req, res) => {
+  const { rowCount } = await pool.query('DELETE FROM question_bank WHERE id=$1', [req.params.id]);
+  if (!rowCount) return res.status(404).json({ error: 'Question not found' });
+  res.json({ success: true });
+}));
+
 // ── Utility ───────────────────────────────────────────────────────────────────
 
 app.post('/api/db/reset', wrap(async (_req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('TRUNCATE attempts, exams, users RESTART IDENTITY CASCADE');
+    await client.query('TRUNCATE attempts, exams, question_bank, users RESTART IDENTITY CASCADE');
     for (const u of SEED_USERS)
       await client.query(
         'INSERT INTO users (id, username, password, role, name) VALUES ($1,$2,$3,$4,$5)',
@@ -233,6 +284,16 @@ app.post('/api/db/reset', wrap(async (_req, res) => {
         [a.id, a.examId, a.studentId, JSON.stringify(a.answers),
          a.score, a.passed, a.startedAt, a.submittedAt]
       );
+    for (const q of SEED_QUESTION_BANK)
+      await client.query(
+        `INSERT INTO question_bank (id, text, type, options, correct_option, keywords, topic, created_by, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [q.id, q.text, q.type,
+         q.options ? JSON.stringify(q.options) : null,
+         q.correctOption ?? null,
+         q.keywords ? JSON.stringify(q.keywords) : null,
+         q.topic, q.createdBy, q.createdAt]
+      );
     await client.query('COMMIT');
     res.json({ success: true });
   } catch (err) {
@@ -250,6 +311,29 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+// Create question_bank table if it was added after the initial DB setup
+async function migrate() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS question_bank (
+      id             TEXT        PRIMARY KEY,
+      text           TEXT        NOT NULL,
+      type           TEXT        NOT NULL DEFAULT 'multiple-choice'
+                                 CHECK (type IN ('multiple-choice', 'open')),
+      options        JSONB,
+      correct_option INT,
+      keywords       JSONB,
+      topic          TEXT        NOT NULL DEFAULT '',
+      created_by     TEXT        NOT NULL REFERENCES users(id),
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_question_bank_created_by ON question_bank(created_by)
+  `);
+  console.log('Migration complete (question_bank table ensured)');
+}
+
+app.listen(PORT, async () => {
   console.log(`ExamsApp server running on port ${PORT}`);
+  await migrate().catch(err => console.error('Migration failed:', err.message));
 });

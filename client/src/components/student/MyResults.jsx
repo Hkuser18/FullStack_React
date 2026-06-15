@@ -2,7 +2,7 @@
 // ממיין לפי תאריך הגשה מהחדש לישן - הניסיון האחרון תמיד למעלה
 // examsMap ממיר מזהי מבחנים לשמות - נטען במקביל לניסיונות כדי לחסוך זמן
 import { useState, useEffect } from 'react';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 
@@ -43,21 +43,24 @@ const MyResults = ({ user }) => {
   const passCount = attempts.filter(a => a.passed).length;
 
   return (
-    <div>
-      <h4 className="mb-4">My Results</h4>
+    <div className="animate-fade-in">
+      <div className="page-header">
+        <h1 className="page-title">My Results</h1>
+      </div>
 
       {attempts.length > 0 && (
         <div className="row g-3 mb-4">
           {[
-            { label: 'Exams Taken', value: attempts.length, color: 'primary' },
-            { label: 'Avg Score',   value: `${avgScore}%`,  color: 'info'    },
-            { label: 'Passed',      value: passCount,        color: 'success' },
+            { label: 'Exams Taken', value: attempts.length, icon: '📋', bg: 'var(--primary-light)', color: 'var(--primary)' },
+            { label: 'Avg Score',   value: `${avgScore}%`,  icon: '📊', bg: 'var(--info-light)',    color: 'var(--info)'    },
+            { label: 'Passed',      value: passCount,        icon: '✅', bg: 'var(--success-light)', color: 'var(--success)' },
           ].map(stat => (
             <div key={stat.label} className="col-sm-4">
-              <div className={`card text-center border-${stat.color}`}>
-                <div className="card-body py-2">
-                  <div className={`fs-3 fw-bold text-${stat.color}`}>{stat.value}</div>
-                  <small className="text-muted">{stat.label}</small>
+              <div className="card border-0 shadow-sm" style={{ borderRadius: 'var(--radius-lg)' }}>
+                <div className="card-body py-3 text-center">
+                  <div style={{ fontSize: '1.5rem', marginBottom: '0.25rem' }}>{stat.icon}</div>
+                  <div className="fw-bold" style={{ fontSize: '1.6rem', color: stat.color }}>{stat.value}</div>
+                  <small style={{ color: 'var(--gray-600)' }}>{stat.label}</small>
                 </div>
               </div>
             </div>

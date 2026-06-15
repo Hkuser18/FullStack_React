@@ -1,17 +1,16 @@
-import Api     from '../api/MockApiService';
+import Api     from '../api';
 import Storage  from './StorageService';
 import Logger   from './LoggerService';
 
 const SESSION_KEY = 'auth_session';
 
 class AuthService {
-  login(username, password, role) {
-    const match = Api.findUserForAuth(username, password, role);
-    if (!match) return null;
-    const user = { id: match.id, name: match.name, role: match.role };
-    Storage.set(SESSION_KEY, user);
+  async login(username, password, role) {
+    const user = await Api.login(username, password, role);
+    const session = { id: user.id, name: user.name, role: user.role };
+    Storage.set(SESSION_KEY, session);
     Logger.info('AuthService.login', { username, role });
-    return user;
+    return session;
   }
 
   register(userData) {

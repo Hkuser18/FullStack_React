@@ -20,18 +20,18 @@ describe('MockApiService', () => {
     users.forEach(u => expect(u).not.toHaveProperty('password'));
   });
 
-  test('findUserForAuth returns matching user (sync)', () => {
-    const user = Api.findUserForAuth('teacher1', 'pass123', 'teacher');
-    expect(user).not.toBeNull();
+  test('login returns matching user without password', async () => {
+    const user = await Api.login('teacher1', 'pass123', 'teacher');
     expect(user.id).toBe('u1');
+    expect(user).not.toHaveProperty('password');
   });
 
-  test('findUserForAuth returns null for wrong password', () => {
-    expect(Api.findUserForAuth('teacher1', 'wrong', 'teacher')).toBeNull();
+  test('login throws for wrong password', async () => {
+    await expect(Api.login('teacher1', 'wrong', 'teacher')).rejects.toThrow('Invalid credentials');
   });
 
-  test('findUserForAuth returns null for wrong role', () => {
-    expect(Api.findUserForAuth('teacher1', 'pass123', 'student')).toBeNull();
+  test('login throws for wrong role', async () => {
+    await expect(Api.login('teacher1', 'pass123', 'student')).rejects.toThrow('Invalid credentials');
   });
 
   test('addUser creates a new user and returns it without a password', async () => {

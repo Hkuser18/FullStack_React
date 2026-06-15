@@ -1,8 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import MyResults from './MyResults';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 
-vi.mock('../../api/MockApiService', () => ({
+vi.mock('../../api', () => ({
   default: { getAttemptsByStudent: vi.fn(), getExams: vi.fn() },
 }));
 vi.mock('../../services/NotifyService', () => ({ default: { error: vi.fn() } }));

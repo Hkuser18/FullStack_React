@@ -1,9 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ExamForm from './ExamForm';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 import Notify from '../../services/NotifyService';
 
-vi.mock('../../api/MockApiService', () => ({
+vi.mock('../../api', () => ({
   default: { getExamById: vi.fn(), createExam: vi.fn(), updateExam: vi.fn() },
 }));
 vi.mock('../../services/NotifyService', () => ({
@@ -36,13 +36,13 @@ describe('ExamForm — Create mode', () => {
 
   test('adds a new question when Add Question is clicked', () => {
     render(<ExamForm user={user} onNavigate={vi.fn()} />);
-    fireEvent.click(screen.getByText('+ Add Question'));
+    fireEvent.click(screen.getByText('+ Multiple Choice'));
     expect(screen.getByText('Questions (2)')).toBeInTheDocument();
   });
 
   test('removes a question when Remove is clicked', () => {
     render(<ExamForm user={user} onNavigate={vi.fn()} />);
-    fireEvent.click(screen.getByText('+ Add Question'));
+    fireEvent.click(screen.getByText('+ Multiple Choice'));
     expect(screen.getByText('Questions (2)')).toBeInTheDocument();
     fireEvent.click(screen.getAllByText('Remove')[0]);
     expect(screen.getByText('Questions (1)')).toBeInTheDocument();

@@ -1,18 +1,13 @@
-// ExamList - דף "המבחנים שלי" למורה
-// מציג את כל המבחנים שיצר המורה המחובר, עם פעולות לפי סטטוס
-// לוגיקת הסטטוסים: draft -> published -> closed (וחזרה ל-published אם צריך)
-// הסיבה לאסור עריכה על מבחן סגור: ציוני תלמידים כבר קיימים - שינוי שאלות יפר את ההגינות
 import { useState, useEffect } from 'react';
-import Api, { ExamStatus } from '../../api/MockApiService';
+import Api, { ExamStatus } from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 import QuestionViewer from '../QuestionViewer';
 
-// מיפוי בין סטטוס לסגנון Bootstrap - מרכז את ההגדרות במקום אחד
 const STATUS_CONFIG = {
-  draft:     { badge: 'secondary', label: 'Draft'     },
-  published: { badge: 'success',   label: 'Published' },
-  closed:    { badge: 'dark',      label: 'Closed'    },
+  draft:     { label: 'Draft',     cls: 'draft'     },
+  published: { label: 'Published', cls: 'published' },
+  closed:    { label: 'Closed',    cls: 'closed'    },
 };
 
 const ExamList = ({ user, onNavigate }) => {
@@ -61,21 +56,21 @@ const ExamList = ({ user, onNavigate }) => {
 
   if (loading) return (
     <div className="text-center py-5">
-      <div className="spinner-border text-primary" role="status" />
+      <div className="spinner-border" style={{ color: 'var(--primary)' }} role="status" />
     </div>
   );
 
   return (
-    <div>
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h4 className="mb-0">My Exams</h4>
-        <button className="btn btn-primary" onClick={() => onNavigate('create-exam')}>
-          + Create New Exam
+    <div className="animate-fade-in">
+      <div className="page-header">
+        <h1 className="page-title">My Exams</h1>
+        <button className="btn-primary-app" onClick={() => onNavigate('create-exam')}>
+          + Create Exam
         </button>
       </div>
 
       {exams.length === 0 && (
-        <div className="alert alert-info">No exams yet. Create your first exam!</div>
+        <div className="alert alert-info rounded-3">No exams yet. Create your first exam!</div>
       )}
 
       <div className="d-flex flex-column gap-3">
@@ -83,55 +78,60 @@ const ExamList = ({ user, onNavigate }) => {
           const sc       = STATUS_CONFIG[exam.status];
           const attempts = attemptCounts[exam.id] ?? 0;
           return (
-            <div key={exam.id} className="card shadow-sm">
-              <div className="card-body">
+            <div key={exam.id} className={`exam-card status-${exam.status}`}>
+              <div className="exam-card-body">
                 <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
 
                   <div>
                     <div className="d-flex align-items-center gap-2 mb-1">
-                      <h5 className="mb-0">{exam.title}</h5>
-                      <span className={`badge bg-${sc.badge}`}>{sc.label}</span>
+                      <h5 className="mb-0 fw-semibold" style={{ color: 'var(--gray-800)' }}>{exam.title}</h5>
+                      <span className={`status-badge ${sc.cls}`}>{sc.label}</span>
                     </div>
-                    <p className="text-muted small mb-1">{exam.description}</p>
-                    <small className="text-muted">
-                      {exam.questions.length} questions &middot; {exam.duration} min &middot; Pass: {exam.passingScore}% &middot; {attempts} submission{attempts !== 1 ? 's' : ''}
-                    </small>
+                    {exam.description && (
+                      <p className="mb-1" style={{ color: 'var(--gray-600)', fontSize: '0.875rem' }}>{exam.description}</p>
+                    )}
+                    <span className="text-muted-app">
+                      {exam.questions.length} questions · {exam.duration} min · Pass: {exam.passingScore}% · {attempts} submission{attempts !== 1 ? 's' : ''}
+                    </span>
                   </div>
 
-                  <div className="d-flex gap-2 flex-wrap">
+                  <div className="d-flex gap-2 flex-wrap align-items-center">
                     {exam.status === ExamStatus.DRAFT && (
                       <>
-                        <button className="btn btn-sm btn-outline-secondary" onClick={() => onNavigate('edit-exam', { examId: exam.id })}>Edit</button>
-                        <button className="btn btn-sm btn-success"           onClick={() => changeStatus(exam.id, ExamStatus.PUBLISHED)}>Publish</button>
-                        <button className="btn btn-sm btn-outline-danger"    onClick={() => deleteExam(exam)}>Delete</button>
+                        <button className="btn-ghost" onClick={() => onNavigate('edit-exam', { examId: exam.id })}>Edit</button>
+                        <button className="btn btn-sm btn-success rounded-3" onClick={() => changeStatus(exam.id, ExamStatus.PUBLISHED)}>Publish</button>
+                        <button className="btn btn-sm btn-outline-danger rounded-3" onClick={() => deleteExam(exam)}>Delete</button>
                       </>
                     )}
                     {exam.status === ExamStatus.PUBLISHED && (
                       <>
-                        <button className="btn btn-sm btn-outline-secondary" onClick={() => onNavigate('edit-exam', { examId: exam.id })}>Edit</button>
-                        <button className="btn btn-sm btn-dark"              onClick={() => changeStatus(exam.id, ExamStatus.CLOSED)}>Close Exam</button>
+                        <button className="btn-ghost" onClick={() => onNavigate('edit-exam', { examId: exam.id })}>Edit</button>
+                        <button className="btn btn-sm btn-dark rounded-3" onClick={() => changeStatus(exam.id, ExamStatus.CLOSED)}>Close</button>
                       </>
                     )}
                     {exam.status === ExamStatus.CLOSED && (
-                      <button className="btn btn-sm btn-outline-success" onClick={() => changeStatus(exam.id, ExamStatus.PUBLISHED)}>Reopen</button>
+                      <button className="btn btn-sm btn-outline-success rounded-3" onClick={() => changeStatus(exam.id, ExamStatus.PUBLISHED)}>Reopen</button>
                     )}
-                    <button className="btn btn-sm btn-outline-primary" onClick={() => onNavigate('student-results', { examId: exam.id })}>
+                    <button
+                      className="btn btn-sm rounded-3"
+                      style={{ background: 'var(--primary-light)', color: 'var(--primary)', fontWeight: 600 }}
+                      onClick={() => onNavigate('student-results', { examId: exam.id })}
+                    >
                       Results{attempts > 0 ? ` (${attempts})` : ''}
                     </button>
                     <button
-                      className="btn btn-sm btn-outline-info"
+                      className="btn-ghost"
                       onClick={() => toggleQuestions(exam.id)}
                     >
-                      {expandedId === exam.id ? 'Hide Questions' : 'View Questions'}
+                      {expandedId === exam.id ? '▲ Hide' : '▼ Questions'}
                     </button>
                   </div>
-
                 </div>
               </div>
 
               {expandedId === exam.id && (
-                <div className="card-footer bg-light">
-                  <p className="fw-semibold text-secondary small mb-3">
+                <div className="exam-card-footer animate-fade-in">
+                  <p className="text-muted-app mb-3">
                     {exam.questions.length} Question{exam.questions.length !== 1 ? 's' : ''} — correct answer highlighted in green
                   </p>
                   {exam.questions.map(q => (

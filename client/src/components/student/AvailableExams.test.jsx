@@ -1,8 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AvailableExams from './AvailableExams';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 
-vi.mock('../../api/MockApiService', () => ({
+vi.mock('../../api', () => ({
   default: { getPublishedExams: vi.fn(), hasAttempted: vi.fn() },
 }));
 vi.mock('../../services/NotifyService', () => ({ default: { error: vi.fn() } }));
@@ -51,8 +51,8 @@ describe('AvailableExams', () => {
     Api.getPublishedExams.mockResolvedValue([exam]);
     Api.hasAttempted.mockResolvedValue(false);
     render(<AvailableExams user={user} onNavigate={onNavigate} />);
-    await waitFor(() => screen.getByText('Take Exam'));
-    fireEvent.click(screen.getByText('Take Exam'));
+    await waitFor(() => screen.getByText('Take Exam →'));
+    fireEvent.click(screen.getByText('Take Exam →'));
     expect(onNavigate).toHaveBeenCalledWith('take-exam', { examId: 'e1' });
   });
 });

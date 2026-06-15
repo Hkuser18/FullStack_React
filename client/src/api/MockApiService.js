@@ -2,7 +2,7 @@
 // כל הנתונים נשמרים בזיכרון (in-memory) ומסונכרנים ל-localStorage בכל שינוי
 // כך הנתונים שורדים ריענון של הדף אבל נמחקים אם המשתמש מנקה את האחסון
 // פונקציות מחזירות Promise עם עיכוב מלאכותי - מדמות API אמיתי עם רשת
-import { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS } from './mockDb';
+import { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS, SEED_QUESTION_BANK } from './mockDb';
 import Storage   from '../services/StorageService';
 import Logger    from '../services/LoggerService';
 import Config    from '../services/ConfigService';
@@ -20,20 +20,20 @@ class MockApiService {
   // ── Init ──────────────────────────────────────────────────────────────────
 
   _load() {
-    // ?? - אם localStorage ריק, טוען נתוני seed התחלתיים
-    // structuredClone - עותק עמוק כדי שהשינויים בזיכרון לא ישפיעו על ה-seed
     this._users    = Storage.get('db_users',    null) ?? structuredClone(SEED_USERS);
     this._exams    = Storage.get('db_exams',    null) ?? structuredClone(SEED_EXAMS);
     this._attempts = Storage.get('db_attempts', null) ?? structuredClone(SEED_ATTEMPTS);
+    this._questions = Storage.get('db_questions', null) ?? structuredClone(SEED_QUESTION_BANK);
     Logger.info('MockApiService loaded', {
       users: this._users.length, exams: this._exams.length, attempts: this._attempts.length,
     });
   }
 
   _persist() {
-    Storage.set('db_users',    this._users);
-    Storage.set('db_exams',    this._exams);
-    Storage.set('db_attempts', this._attempts);
+    Storage.set('db_users',     this._users);
+    Storage.set('db_exams',     this._exams);
+    Storage.set('db_attempts',  this._attempts);
+    Storage.set('db_questions', this._questions);
   }
 
   // Wraps sync fn in a delayed Promise, matching a real API feel
@@ -45,9 +45,10 @@ class MockApiService {
   }
 
   resetDatabase() {
-    this._users    = structuredClone(SEED_USERS);
-    this._exams    = structuredClone(SEED_EXAMS);
-    this._attempts = structuredClone(SEED_ATTEMPTS);
+    this._users     = structuredClone(SEED_USERS);
+    this._exams     = structuredClone(SEED_EXAMS);
+    this._attempts  = structuredClone(SEED_ATTEMPTS);
+    this._questions = structuredClone(SEED_QUESTION_BANK);
     this._persist();
     Logger.warn('MockApiService: database reset to seed data');
   }
@@ -66,11 +67,14 @@ class MockApiService {
     });
   }
 
-  // Internal only — returns password for auth check
-  findUserForAuth(username, password, role) {
-    return this._users.find(
-      u => u.username === username && u.password === password && u.role === role
-    ) ?? null;
+  login(username, password, role) {
+    return this._async(() => {
+      const match = this._users.find(
+        u => u.username === username && u.password === password && u.role === role
+      );
+      if (!match) throw new Error('Invalid credentials');
+      return this._safeUser(match);
+    });
   }
 
   addUser(userData) {
@@ -173,6 +177,41 @@ class MockApiService {
     });
   }
 
+  // ── Question Bank ─────────────────────────────────────────────────────────
+
+  getQuestions() {
+    return this._async(() => structuredClone(this._questions));
+  }
+
+  getQuestionsByTeacher(teacherId) {
+    return this._async(() =>
+      structuredClone(this._questions.filter(q => q.createdBy === teacherId))
+    );
+  }
+
+  addQuestion(data) {
+    return this._async(() => {
+      const q = {
+        ...data,
+        id: `qb_${Date.now()}`,
+        createdAt: new Date().toISOString(),
+      };
+      this._questions.push(q);
+      Storage.set('db_questions', this._questions);
+      return structuredClone(q);
+    });
+  }
+
+  deleteQuestion(id) {
+    return this._async(() => {
+      const idx = this._questions.findIndex(q => q.id === id);
+      if (idx === -1) throw new Error('Question not found');
+      this._questions.splice(idx, 1);
+      Storage.set('db_questions', this._questions);
+      return true;
+    });
+  }
+
   // ── Attempts ──────────────────────────────────────────────────────────────
 
   submitAttempt(attemptData) {
@@ -180,9 +219,15 @@ class MockApiService {
       const exam = this._exams.find(e => e.id === attemptData.examId);
       if (!exam) throw new Error('Exam not found');
 
-      const correct = attemptData.answers.reduce(
-        (acc, ans, i) => acc + (ans === exam.questions[i]?.correctOption ? 1 : 0), 0
-      );
+      const correct = attemptData.answers.reduce((acc, ans, i) => {
+        const q = exam.questions[i];
+        if (!q) return acc;
+        if (q.type === 'open') {
+          const text = String(ans ?? '').toLowerCase();
+          return acc + ((q.keywords ?? []).some(kw => text.includes(kw.toLowerCase())) ? 1 : 0);
+        }
+        return acc + (ans === q.correctOption ? 1 : 0);
+      }, 0);
       const score  = Math.round((correct / exam.questions.length) * 100);
       const passed = score >= (exam.passingScore ?? 60);
 

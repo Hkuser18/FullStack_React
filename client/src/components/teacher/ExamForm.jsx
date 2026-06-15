@@ -1,20 +1,27 @@
-// ExamForm - טופס יצירה ועריכה של מבחן (רכיב אחד לשני מצבים)
-// כאשר examId מועבר - מצב עריכה, ללא examId - מצב יצירה
-// שיתוף הרכיב בין שני מצבים חוסך כפילות קוד ומבטיח אחידות בטופס
+// ExamForm - creates or edits an exam (single component, two modes)
+// examId present → edit mode; absent → create mode
+// Supports multiple-choice and open-ended questions.
+// "Import from Bank" panel lets teachers reuse bank questions.
 import { useState, useEffect } from 'react';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 
-// יוצר שאלה חדשה ריקה עם id ייחודי מבוסס זמן + אקראיות
-const newQuestion = () => ({
+const newMcQuestion = () => ({
   id:            `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
   text:          '',
+  type:          'multiple-choice',
   options:       ['', '', '', ''],
   correctOption: 0,
 });
 
-// Used for both Create (no examId) and Edit (examId provided)
+const newOpenQuestion = () => ({
+  id:       `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  text:     '',
+  type:     'open',
+  keywords: [],
+});
+
 const ExamForm = ({ user, examId, onNavigate }) => {
   const isEdit = !!examId;
 
@@ -22,9 +29,14 @@ const ExamForm = ({ user, examId, onNavigate }) => {
   const [description,  setDescription]  = useState('');
   const [duration,     setDuration]     = useState(30);
   const [passingScore, setPassingScore] = useState(60);
-  const [questions,    setQuestions]    = useState([newQuestion()]);
+  const [questions,    setQuestions]    = useState([newMcQuestion()]);
   const [loading,      setLoading]      = useState(isEdit);
   const [saving,       setSaving]       = useState(false);
+
+  // Bank import panel state
+  const [showBank,      setShowBank]      = useState(false);
+  const [bankQuestions, setBankQuestions] = useState([]);
+  const [bankLoading,   setBankLoading]   = useState(false);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -44,8 +56,11 @@ const ExamForm = ({ user, examId, onNavigate }) => {
       });
   }, [examId]);
 
-  const addQuestion    = () => setQuestions(p => [...p, newQuestion()]);
-  const removeQuestion = (i) => setQuestions(p => p.filter((_, idx) => idx !== i));
+  // ── Question mutation helpers ─────────────────────────────────────────────
+
+  const addMcQuestion   = () => setQuestions(p => [...p, newMcQuestion()]);
+  const addOpenQuestion = () => setQuestions(p => [...p, newOpenQuestion()]);
+  const removeQuestion  = (i) => setQuestions(p => p.filter((_, idx) => idx !== i));
 
   const updateQuestion = (i, field, value) =>
     setQuestions(p => p.map((q, idx) => idx === i ? { ...q, [field]: value } : q));
@@ -55,15 +70,57 @@ const ExamForm = ({ user, examId, onNavigate }) => {
       i === qIdx ? { ...q, options: q.options.map((o, j) => j === oIdx ? value : o) } : q
     ));
 
+  // keywords stored as array; edited as comma-separated string
+  const updateKeywords = (qIdx, raw) =>
+    updateQuestion(qIdx, 'keywords', raw.split(',').map(k => k.trim()).filter(Boolean));
+
+  // ── Bank import ───────────────────────────────────────────────────────────
+
+  const openBank = () => {
+    setShowBank(true);
+    if (bankQuestions.length > 0) return;
+    setBankLoading(true);
+    Api.getQuestionsByTeacher(user.id)
+      .then(qs => { setBankQuestions(qs); setBankLoading(false); })
+      .catch(() => { Notify.error('Could not load question bank.'); setBankLoading(false); });
+  };
+
+  const importFromBank = (bq) => {
+    const imported = {
+      id:            `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      text:          bq.text,
+      type:          bq.type,
+      options:       bq.options ?? [],
+      correctOption: bq.correctOption ?? 0,
+      keywords:      bq.keywords ?? [],
+    };
+    setQuestions(p => [...p, imported]);
+    Notify.success(`Imported: "${bq.text.slice(0, 40)}…"`);
+  };
+
+  // ── Validation ────────────────────────────────────────────────────────────
+
   const validate = () => {
-    if (!title.trim())          { Notify.warning('Title is required.');                     return false; }
-    if (questions.length === 0) { Notify.warning('Add at least one question.');             return false; }
+    if (!title.trim())          { Notify.warning('Title is required.');          return false; }
+    if (questions.length === 0) { Notify.warning('Add at least one question.');  return false; }
     for (const [i, q] of questions.entries()) {
-      if (!q.text.trim())               { Notify.warning(`Question ${i + 1} needs text.`);              return false; }
-      if (q.options.some(o => !o.trim())){ Notify.warning(`All options in question ${i + 1} must be filled.`); return false; }
+      if (!q.text.trim()) { Notify.warning(`Question ${i + 1} needs text.`); return false; }
+      if (q.type === 'open') {
+        if (!q.keywords?.length) {
+          Notify.warning(`Question ${i + 1} (open) needs at least one keyword.`);
+          return false;
+        }
+      } else {
+        if (q.options.some(o => !o.trim())) {
+          Notify.warning(`All options in question ${i + 1} must be filled.`);
+          return false;
+        }
+      }
     }
     return true;
   };
+
+  // ── Submit ────────────────────────────────────────────────────────────────
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -88,6 +145,8 @@ const ExamForm = ({ user, examId, onNavigate }) => {
       setSaving(false);
     });
   };
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) return (
     <div className="text-center py-5">
@@ -133,15 +192,57 @@ const ExamForm = ({ user, examId, onNavigate }) => {
 
         {/* Questions */}
         <div className="card mb-4 shadow-sm">
-          <div className="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-            <span className="fw-semibold">Questions ({questions.length})</span>
-            <button type="button" className="btn btn-light btn-sm" onClick={addQuestion}>+ Add Question</button>
+          <div className="card-header bg-secondary text-white">
+            <div className="d-flex justify-content-between align-items-center">
+              <span className="fw-semibold">Questions ({questions.length})</span>
+              <div className="d-flex gap-2">
+                <button type="button" className="btn btn-light btn-sm" onClick={addMcQuestion}>+ Multiple Choice</button>
+                <button type="button" className="btn btn-light btn-sm" onClick={addOpenQuestion}>+ Open</button>
+                <button type="button" className="btn btn-warning btn-sm" onClick={openBank}>📥 Import from Bank</button>
+              </div>
+            </div>
           </div>
+
+          {/* Bank import panel */}
+          {showBank && (
+            <div className="border-bottom bg-light p-3">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <strong className="text-secondary">Your Question Bank</strong>
+                <button type="button" className="btn-close btn-sm" onClick={() => setShowBank(false)} />
+              </div>
+              {bankLoading && <div className="text-center py-2"><div className="spinner-border spinner-border-sm" /></div>}
+              {!bankLoading && bankQuestions.length === 0 && (
+                <p className="text-muted small mb-0">No bank questions yet. Add some in the Question Bank page.</p>
+              )}
+              <div className="d-flex flex-column gap-2">
+                {bankQuestions.map(bq => (
+                  <div key={bq.id} className="d-flex justify-content-between align-items-start border rounded p-2 bg-white">
+                    <div>
+                      <span className={`badge me-2 ${bq.type === 'open' ? 'bg-info' : 'bg-secondary'}`}>
+                        {bq.type === 'open' ? 'Open' : 'MC'}
+                      </span>
+                      <span className="small">{bq.text}</span>
+                      {bq.topic && <span className="ms-2 text-muted small">({bq.topic})</span>}
+                    </div>
+                    <button type="button" className="btn btn-outline-primary btn-sm ms-2 flex-shrink-0" onClick={() => importFromBank(bq)}>
+                      Import
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="card-body d-flex flex-column gap-4">
             {questions.map((q, qIdx) => (
               <div key={q.id} className="border rounded p-3 bg-light">
                 <div className="d-flex justify-content-between align-items-center mb-2">
-                  <span className="fw-semibold text-secondary small">Question {qIdx + 1}</span>
+                  <div className="d-flex align-items-center gap-2">
+                    <span className="fw-semibold text-secondary small">Q{qIdx + 1}</span>
+                    <span className={`badge ${q.type === 'open' ? 'bg-info' : 'bg-secondary'}`}>
+                      {q.type === 'open' ? 'Open' : 'Multiple Choice'}
+                    </span>
+                  </div>
                   {questions.length > 1 && (
                     <button type="button" className="btn btn-outline-danger btn-sm" onClick={() => removeQuestion(qIdx)}>Remove</button>
                   )}
@@ -157,30 +258,47 @@ const ExamForm = ({ user, examId, onNavigate }) => {
                   />
                 </div>
 
-                <div className="d-flex flex-column gap-2">
-                  {q.options.map((opt, oIdx) => (
-                    <div key={oIdx} className="input-group">
-                      <span className="input-group-text">
-                        <input
-                          type="radio"
-                          name={`correct-${q.id}`}
-                          checked={q.correctOption === oIdx}
-                          onChange={() => updateQuestion(qIdx, 'correctOption', oIdx)}
-                          title="Correct answer"
-                        />
-                      </span>
+                {q.type === 'multiple-choice' ? (
+                  <>
+                    <div className="d-flex flex-column gap-2">
+                      {q.options.map((opt, oIdx) => (
+                        <div key={oIdx} className="input-group">
+                          <span className="input-group-text">
+                            <input
+                              type="radio"
+                              name={`correct-${q.id}`}
+                              checked={q.correctOption === oIdx}
+                              onChange={() => updateQuestion(qIdx, 'correctOption', oIdx)}
+                              title="Correct answer"
+                            />
+                          </span>
+                          <input
+                            type="text"
+                            className={`form-control ${q.correctOption === oIdx ? 'border-success' : ''}`}
+                            placeholder={`Option ${oIdx + 1}`}
+                            value={opt}
+                            onChange={e => updateOption(qIdx, oIdx, e.target.value)}
+                            required
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <small className="text-muted d-block mt-1">Select the radio button next to the correct answer.</small>
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-1">
+                      <label className="form-label small text-secondary mb-1">Scoring Keywords (comma-separated)</label>
                       <input
-                        type="text"
-                        className={`form-control ${q.correctOption === oIdx ? 'border-success' : ''}`}
-                        placeholder={`Option ${oIdx + 1}`}
-                        value={opt}
-                        onChange={e => updateOption(qIdx, oIdx, e.target.value)}
-                        required
+                        className="form-control"
+                        placeholder="e.g. closure, scope, lexical"
+                        value={(q.keywords ?? []).join(', ')}
+                        onChange={e => updateKeywords(qIdx, e.target.value)}
                       />
                     </div>
-                  ))}
-                </div>
-                <small className="text-muted d-block mt-1">Select the radio button next to the correct answer.</small>
+                    <small className="text-muted">Student answer scores if it contains any keyword (case-insensitive).</small>
+                  </>
+                )}
               </div>
             ))}
           </div>

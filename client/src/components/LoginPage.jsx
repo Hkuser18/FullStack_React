@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Auth   from '../services/AuthService';
 import Notify from '../services/NotifyService';
 import Logger from '../services/LoggerService';
@@ -8,40 +8,45 @@ const LoginPage = ({ onLogin, onGoToRegister }) => {
   const [password, setPassword] = useState('');
   const [role, setRole]         = useState('student');
   const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
-    const user = Auth.login(username, password, role);
-
-    if (user) {
+    setLoading(true);
+    try {
+      const user = await Auth.login(username, password, role);
       Notify.success(`Welcome back, ${user.name}!`);
       onLogin(user);
-    } else {
+    } catch {
       Logger.warn('Login failed', { username, role });
       setError('Invalid username, password, or role.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-vh-100 d-flex align-items-center justify-content-center bg-light">
-      <div className="card shadow" style={{ width: '100%', maxWidth: 420 }}>
-        <div className="card-header bg-dark text-white text-center py-3">
-          <h4 className="mb-0">E-Test System &mdash; Login</h4>
+    <div className="auth-page">
+      <div className="auth-card animate-fade-in">
+        <div className="auth-card-header">
+          <div className="logo">📝</div>
+          <h4>E-Test System</h4>
+          <p>Sign in to continue</p>
         </div>
-        <div className="card-body p-4">
-          <div className="d-flex justify-content-center gap-3 mb-4">
+
+        <div className="auth-card-body">
+          <div className="role-toggle">
             <button
               type="button"
-              className={`btn flex-fill ${role === 'student' ? 'btn-info text-white' : 'btn-outline-info'}`}
+              className={`role-toggle-btn${role === 'student' ? ' active' : ''}`}
               onClick={() => setRole('student')}
             >
               Student
             </button>
             <button
               type="button"
-              className={`btn flex-fill ${role === 'teacher' ? 'btn-primary' : 'btn-outline-primary'}`}
+              className={`role-toggle-btn${role === 'teacher' ? ' active' : ''}`}
               onClick={() => setRole('teacher')}
             >
               Teacher
@@ -50,41 +55,46 @@ const LoginPage = ({ onLogin, onGoToRegister }) => {
 
           <form onSubmit={handleSubmit}>
             <div className="mb-3">
-              <label className="form-label">Username</label>
+              <label className="form-label-app">Username</label>
               <input
                 type="text"
-                className="form-control"
+                className="form-input-app"
                 placeholder="Enter username"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={e => setUsername(e.target.value)}
                 required
               />
             </div>
             <div className="mb-3">
-              <label className="form-label">Password</label>
+              <label className="form-label-app">Password</label>
               <input
                 type="password"
-                className="form-control"
+                className="form-input-app"
                 placeholder="Enter password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={e => setPassword(e.target.value)}
                 required
               />
             </div>
 
             {error && (
-              <div className="alert alert-danger py-2" role="alert">
+              <div className="alert alert-danger py-2 mb-3" role="alert" style={{ fontSize: '0.85rem', borderRadius: 8 }}>
                 {error}
               </div>
             )}
 
-            <button type="submit" className="btn btn-dark w-100 mt-2">
-              Login as {role === 'teacher' ? 'Teacher' : 'Student'}
+            <button type="submit" className="btn-primary-app w-100" disabled={loading} style={{ width: '100%' }}>
+              {loading ? 'Logging in…' : `Login as ${role === 'teacher' ? 'Teacher' : 'Student'}`}
             </button>
           </form>
 
-          <div className="text-center mt-3">
-            <button className="btn btn-link p-0" onClick={onGoToRegister}>
+          <hr className="divider" />
+          <div className="text-center">
+            <button
+              className="btn btn-link p-0"
+              style={{ fontSize: '0.85rem', color: 'var(--primary)' }}
+              onClick={onGoToRegister}
+            >
               No account yet? Register here
             </button>
           </div>

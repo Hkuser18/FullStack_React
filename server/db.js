@@ -73,6 +73,37 @@ export const SEED_EXAMS = [
   },
 ];
 
+export const SEED_QUESTION_BANK = [
+  {
+    id: 'qb1', text: 'What is a closure in JavaScript?', type: 'open',
+    keywords: ['closure', 'lexical', 'scope', 'function', 'environment'],
+    topic: 'JavaScript', createdBy: 'u1', createdAt: '2026-01-10T10:00:00.000Z',
+  },
+  {
+    id: 'qb2', text: 'Which keyword declares a block-scoped variable?',
+    type: 'multiple-choice',
+    options: ['var', 'let', 'const', 'def'], correctOption: 1,
+    topic: 'JavaScript', createdBy: 'u1', createdAt: '2026-01-10T10:00:00.000Z',
+  },
+  {
+    id: 'qb3', text: 'What does the useEffect hook do in React?', type: 'open',
+    keywords: ['side effect', 'effect', 'lifecycle', 'render', 'cleanup'],
+    topic: 'React', createdBy: 'u1', createdAt: '2026-01-15T10:00:00.000Z',
+  },
+  {
+    id: 'qb4', text: 'What does HTML stand for?',
+    type: 'multiple-choice',
+    options: ['Hyper Text Markup Language', 'High Tech Modern Language', 'Hyperlink Model Logic', 'Home Tool Markup Language'],
+    correctOption: 0,
+    topic: 'HTML', createdBy: 'u2', createdAt: '2026-02-01T10:00:00.000Z',
+  },
+  {
+    id: 'qb5', text: 'Explain what a Git branch is and why it is useful.', type: 'open',
+    keywords: ['branch', 'pointer', 'commit', 'parallel', 'independent', 'feature'],
+    topic: 'Git', createdBy: 'u2', createdAt: '2026-01-20T10:00:00.000Z',
+  },
+];
+
 export const SEED_ATTEMPTS = [
   { id: 'a1', examId: 'e1', studentId: 'u3', answers: [0, 2, 2, 2], score: 100, passed: true,  startedAt: '2026-02-01T09:00:00.000Z', submittedAt: '2026-02-01T09:14:00.000Z' },
   { id: 'a2', examId: 'e1', studentId: 'u4', answers: [1, 2, 0, 1], score: 25,  passed: false, startedAt: '2026-02-01T10:00:00.000Z', submittedAt: '2026-02-01T10:18:00.000Z' },

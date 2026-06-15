@@ -1,8 +1,5 @@
-// AvailableExams - רשימת מבחנים זמינים לתלמיד
-// מציג רק מבחנים עם סטטוס 'published' - תלמידים לא רואים טיוטות
-// בדיקת hasAttempted מונעת הגשה כפולה - כל תלמיד מגיש מבחן פעם אחת בלבד
 import { useState, useEffect } from 'react';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 
@@ -32,41 +29,46 @@ const AvailableExams = ({ user, onNavigate }) => {
 
   if (loading) return (
     <div className="text-center py-5">
-      <div className="spinner-border text-info" role="status" />
+      <div className="spinner-border" style={{ color: 'var(--primary)' }} role="status" />
     </div>
   );
 
   return (
-    <div>
-      <h4 className="mb-4">Available Exams</h4>
+    <div className="animate-fade-in">
+      <div className="page-header">
+        <h1 className="page-title">Available Exams</h1>
+      </div>
 
       {exams.length === 0 && (
-        <div className="alert alert-info">No exams are currently available.</div>
+        <div className="alert alert-info rounded-3">No exams are currently available.</div>
       )}
 
       <div className="d-flex flex-column gap-3">
         {exams.map(exam => {
           const done = attempted[exam.id];
           return (
-            <div key={exam.id} className="card shadow-sm">
-              <div className="card-body">
-                <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
+            <div key={exam.id} className={`exam-card status-published${done ? ' opacity-75' : ''}`}>
+              <div className="exam-card-body">
+                <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
                   <div>
                     <div className="d-flex align-items-center gap-2 mb-1">
-                      <h5 className="mb-0">{exam.title}</h5>
-                      {done && <span className="badge bg-success">Completed</span>}
+                      <h5 className="mb-0 fw-semibold" style={{ color: 'var(--gray-800)' }}>{exam.title}</h5>
+                      {done && <span className="status-badge completed">✓ Completed</span>}
                     </div>
-                    <p className="text-muted small mb-1">{exam.description}</p>
-                    <small className="text-muted">
-                      {exam.questions.length} questions &middot; {exam.duration} min &middot; Pass: {exam.passingScore}%
-                    </small>
+                    {exam.description && (
+                      <p className="mb-1" style={{ color: 'var(--gray-600)', fontSize: '0.875rem' }}>{exam.description}</p>
+                    )}
+                    <span className="text-muted-app">
+                      {exam.questions.length} questions · {exam.duration} min · Pass: {exam.passingScore}%
+                    </span>
                   </div>
+
                   <button
-                    className={`btn ${done ? 'btn-outline-secondary' : 'btn-info text-white'}`}
+                    className={done ? 'btn-ghost' : 'btn-primary-app'}
                     disabled={done}
                     onClick={() => onNavigate('take-exam', { examId: exam.id })}
                   >
-                    {done ? 'Already Submitted' : 'Take Exam'}
+                    {done ? 'Already Submitted' : 'Take Exam →'}
                   </button>
                 </div>
               </div>

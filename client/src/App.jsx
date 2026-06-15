@@ -10,6 +10,7 @@ import ComingSoon   from './components/shared/ComingSoon';
 import ExamList       from './components/teacher/ExamList';
 import ExamForm       from './components/teacher/ExamForm';
 import StudentResults from './components/teacher/StudentResults';
+import QuestionBank   from './components/teacher/QuestionBank';
 
 import AvailableExams from './components/student/AvailableExams';
 import TakeExam       from './components/student/TakeExam';
@@ -85,6 +86,8 @@ function App() {
         return <ExamForm user={user} examId={pageParams.examId} onNavigate={handleNavigate} />;
       case 'student-results':
         return <StudentResults user={user} examId={pageParams.examId} onNavigate={handleNavigate} />;
+      case 'question-bank':
+        return <QuestionBank user={user} onNavigate={handleNavigate} />;
 
       // Student pages
       case 'available-exams':
@@ -111,7 +114,7 @@ function App() {
           activePage={activePage}
           onNavigate={handleNavigate}
         />
-        <main className="flex-grow-1 p-4 bg-light" style={{ overflowY: 'auto' }}>
+        <main className="app-main animate-fade-in">
           {renderPage()}
         </main>
       </div>
