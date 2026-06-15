@@ -1,8 +1,8 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import StudentResults from './StudentResults';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 
-vi.mock('../../api/MockApiService', () => ({
+vi.mock('../../api', () => ({
   default: {
     getExamsByTeacher: vi.fn(),
     getAttemptsByExam: vi.fn(),

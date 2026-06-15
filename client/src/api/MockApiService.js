@@ -66,11 +66,14 @@ class MockApiService {
     });
   }
 
-  // Internal only — returns password for auth check
-  findUserForAuth(username, password, role) {
-    return this._users.find(
-      u => u.username === username && u.password === password && u.role === role
-    ) ?? null;
+  login(username, password, role) {
+    return this._async(() => {
+      const match = this._users.find(
+        u => u.username === username && u.password === password && u.role === role
+      );
+      if (!match) throw new Error('Invalid credentials');
+      return this._safeUser(match);
+    });
   }
 
   addUser(userData) {

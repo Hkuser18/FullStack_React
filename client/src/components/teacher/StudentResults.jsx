@@ -2,7 +2,7 @@
 // מציג סטטיסטיקות ורשימת ניסיונות לכל מבחן שהמורה יצר
 // ה-usersMap ממיר מזהי תלמידים לשמות קריאים - לא חושף סיסמאות
 import { useState, useEffect } from 'react';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 

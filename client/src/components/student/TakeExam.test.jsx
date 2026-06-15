@@ -1,8 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import TakeExam from './TakeExam';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 
-vi.mock('../../api/MockApiService', () => ({
+vi.mock('../../api', () => ({
   default: { getExamById: vi.fn(), submitAttempt: vi.fn() },
 }));
 vi.mock('../../services/NotifyService', () => ({
@@ -64,7 +64,7 @@ describe('TakeExam', () => {
     await waitFor(() => screen.getByText('Math Quiz'));
     fireEvent.click(screen.getByRole('button', { name: /submit/i }));
     await waitFor(() =>
-      expect(screen.getByText(/congratulations/i)).toBeInTheDocument()
+      expect(screen.getByText(/you passed/i)).toBeInTheDocument()
     );
     expect(screen.getByText('100%')).toBeInTheDocument();
   });
@@ -83,7 +83,7 @@ describe('TakeExam', () => {
     await waitFor(() => screen.getByText('Math Quiz'));
     fireEvent.click(screen.getByRole('button', { name: /submit/i }));
     await waitFor(() =>
-      expect(screen.getByText(/you did not pass/i)).toBeInTheDocument()
+      expect(screen.getByText(/not passed/i)).toBeInTheDocument()
     );
     expect(screen.getByText('20%')).toBeInTheDocument();
   });
@@ -94,9 +94,9 @@ describe('TakeExam', () => {
     render(<TakeExam user={user} examId="e1" onNavigate={vi.fn()} />);
     await waitFor(() => screen.getByText('Math Quiz'));
     fireEvent.click(screen.getByRole('button', { name: /submit/i }));
-    await waitFor(() => screen.getByText(/congratulations/i));
-    expect(screen.getByRole('button', { name: /back to exams/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /view all my results/i })).toBeInTheDocument();
+    await waitFor(() => screen.getByText(/you passed/i));
+    expect(screen.getAllByRole('button', { name: /back to exams/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('button', { name: /view my results/i }).length).toBeGreaterThan(0);
   });
 
   test('Abandon button calls onNavigate to available-exams', async () => {

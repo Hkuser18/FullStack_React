@@ -4,7 +4,7 @@
 // בלי useCallback היה נוצר closure ישן עם answers מיושנות
 // answers מאוחסנות כמערך - אינדקס = מספר שאלה, ערך = אינדקס האפשרות שנבחרה (null = לא נענה)
 import { useState, useEffect, useRef, useCallback } from 'react';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 
@@ -94,14 +94,16 @@ const TakeExam = ({ user, examId, onNavigate }) => {
   if (phase === 'result' && result) {
     const passed = result.passed;
     return (
-      <div style={{ maxWidth: 700, margin: '0 auto' }}>
-        <div className={`card shadow mb-4 border-${passed ? 'success' : 'danger'}`}>
-          <div className={`card-header bg-${passed ? 'success' : 'danger'} text-white text-center py-3`}>
-            <h4 className="mb-0">{passed ? 'Congratulations — You Passed!' : 'You Did Not Pass'}</h4>
-          </div>
-          <div className="card-body text-center py-4">
-            <div className="display-3 fw-bold mb-2">{result.score}%</div>
-            <p className="text-muted mb-0">Passing score: {exam.passingScore}%</p>
+      <div style={{ maxWidth: 700, margin: '0 auto' }} className="animate-fade-in">
+        <div className="result-card">
+          <div className={`score-circle ${passed ? 'pass' : 'fail'}`}>{result.score}%</div>
+          <h3 className="fw-bold mb-1" style={{ color: passed ? 'var(--success)' : 'var(--danger)' }}>
+            {passed ? '🎉 You Passed!' : '❌ Not Passed'}
+          </h3>
+          <p className="text-muted-app">Passing score: {exam.passingScore}%</p>
+          <div className="d-flex gap-3 justify-content-center mt-3">
+            <button className="btn-ghost" onClick={() => onNavigate('available-exams')}>Back to Exams</button>
+            <button className="btn-primary-app" onClick={() => onNavigate('my-results')}>View My Results</button>
           </div>
         </div>
 
@@ -140,8 +142,8 @@ const TakeExam = ({ user, examId, onNavigate }) => {
         </div>
 
         <div className="d-flex gap-3 mt-4">
-          <button className="btn btn-outline-secondary" onClick={() => onNavigate('available-exams')}>Back to Exams</button>
-          <button className="btn btn-primary"           onClick={() => onNavigate('my-results')}>View All My Results</button>
+          <button className="btn-ghost" onClick={() => onNavigate('available-exams')}>← Back to Exams</button>
+          <button className="btn-primary-app" onClick={() => onNavigate('my-results')}>View All My Results</button>
         </div>
       </div>
     );
@@ -159,8 +161,8 @@ const TakeExam = ({ user, examId, onNavigate }) => {
           <h5 className="mb-0">{exam.title}</h5>
           <small className="text-muted">{answered} / {exam.questions.length} answered</small>
         </div>
-        <div className={`badge fs-5 px-3 py-2 ${urgent ? 'bg-danger' : 'bg-dark'}`}>
-          {fmt(timeLeft)}
+        <div className={`exam-timer${urgent ? ' urgent' : ''}`}>
+          ⏱ {fmt(timeLeft)}
         </div>
       </div>
 

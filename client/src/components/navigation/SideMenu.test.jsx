@@ -41,6 +41,6 @@ describe('SideMenu', () => {
   test('active page item has primary button style', () => {
     render(<SideMenu role="teacher" activePage="my-exams" onNavigate={vi.fn()} />);
     const activeBtn = screen.getByText('My Exams');
-    expect(activeBtn).toHaveClass('btn-primary');
+    expect(activeBtn.closest('button')).toHaveClass('active');
   });
 });

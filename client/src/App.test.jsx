@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from './App';
 import Auth from './services/AuthService';
 
@@ -31,7 +31,7 @@ describe('App', () => {
   test('shows LoginPage when no user is logged in', () => {
     Auth.getCurrentUser.mockReturnValue(null);
     render(<App />);
-    expect(screen.getByRole('heading', { name: /login/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /login as student/i })).toBeInTheDocument();
   });
 
   test('clicking Register link switches to RegisterPage', () => {
@@ -46,7 +46,7 @@ describe('App', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: /register here/i }));
     fireEvent.click(screen.getByRole('button', { name: /already have an account/i }));
-    expect(screen.getByRole('heading', { name: /login/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /login as student/i })).toBeInTheDocument();
   });
 
   test('shows teacher layout with NavBar and SideMenu after login', () => {
@@ -84,18 +84,18 @@ describe('App', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: /logout/i }));
     expect(Auth.logout).toHaveBeenCalled();
-    expect(screen.getByRole('heading', { name: /login/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /login as student/i })).toBeInTheDocument();
   });
 
-  test('logging in via LoginPage form shows authenticated layout', () => {
+  test('logging in via LoginPage form shows authenticated layout', async () => {
     Auth.getCurrentUser.mockReturnValue(null);
-    Auth.login.mockReturnValue(teacher);
+    Auth.login.mockResolvedValue(teacher);
     render(<App />);
     fireEvent.change(screen.getByPlaceholderText('Enter username'), { target: { value: 'teacher1' } });
     fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'pass123' } });
     fireEvent.click(screen.getByRole('button', { name: /^teacher$/i }));
     fireEvent.submit(screen.getByRole('button', { name: /login as teacher/i }).closest('form'));
-    expect(screen.getByText('Dr. Smith')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Dr. Smith')).toBeInTheDocument());
     expect(screen.getByText('ExamList')).toBeInTheDocument();
   });
 });

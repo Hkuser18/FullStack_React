@@ -1,9 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ExamForm from './ExamForm';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 import Notify from '../../services/NotifyService';
 
-vi.mock('../../api/MockApiService', () => ({
+vi.mock('../../api', () => ({
   default: { getExamById: vi.fn(), createExam: vi.fn(), updateExam: vi.fn() },
 }));
 vi.mock('../../services/NotifyService', () => ({

@@ -1,8 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ExamList from './ExamList';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 
-vi.mock('../../api/MockApiService', () => ({
+vi.mock('../../api', () => ({
   default: {
     getExamsByTeacher: vi.fn(),
     getAttemptsByExam: vi.fn(),
@@ -53,19 +53,19 @@ describe('ExamList', () => {
     Api.getExamsByTeacher.mockResolvedValue([]);
     const onNavigate = vi.fn();
     render(<ExamList user={user} onNavigate={onNavigate} />);
-    await waitFor(() => screen.getByText('+ Create New Exam'));
-    fireEvent.click(screen.getByText('+ Create New Exam'));
+    await waitFor(() => screen.getByText('+ Create Exam'));
+    fireEvent.click(screen.getByText('+ Create Exam'));
     expect(onNavigate).toHaveBeenCalledWith('create-exam');
   });
 
   test('toggles question viewer when View Questions / Hide Questions clicked', async () => {
     Api.getExamsByTeacher.mockResolvedValue([draftExam]);
     render(<ExamList user={user} onNavigate={vi.fn()} />);
-    await waitFor(() => screen.getByText('View Questions'));
-    fireEvent.click(screen.getByText('View Questions'));
-    expect(screen.getByText('Hide Questions')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Hide Questions'));
-    expect(screen.getByText('View Questions')).toBeInTheDocument();
+    await waitFor(() => screen.getByText('▼ Questions'));
+    fireEvent.click(screen.getByText('▼ Questions'));
+    expect(screen.getByText('▲ Hide')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('▲ Hide'));
+    expect(screen.getByText('▼ Questions')).toBeInTheDocument();
   });
 
   test('shows Publish and Edit buttons for a draft exam', async () => {
@@ -81,7 +81,7 @@ describe('ExamList', () => {
     Api.getExamsByTeacher.mockResolvedValue([publishedExam]);
     render(<ExamList user={user} onNavigate={vi.fn()} />);
     await waitFor(() => screen.getByText('Published'));
-    expect(screen.getByRole('button', { name: /close exam/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^close$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^edit$/i })).toBeInTheDocument();
   });
 

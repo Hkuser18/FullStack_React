@@ -2,7 +2,7 @@
 // כאשר examId מועבר - מצב עריכה, ללא examId - מצב יצירה
 // שיתוף הרכיב בין שני מצבים חוסך כפילות קוד ומבטיח אחידות בטופס
 import { useState, useEffect } from 'react';
-import Api from '../../api/MockApiService';
+import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 

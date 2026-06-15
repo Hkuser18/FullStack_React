@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import LoginPage from './LoginPage';
 import Auth from '../services/AuthService';
 
@@ -40,23 +40,25 @@ describe('LoginPage', () => {
     expect(screen.getByRole('button', { name: /login as teacher/i })).toBeInTheDocument();
   });
 
-  test('shows error message on failed login', () => {
-    Auth.login.mockReturnValue(null);
+  test('shows error message on failed login', async () => {
+    Auth.login.mockRejectedValue(new Error('Invalid credentials'));
     setup();
     fireEvent.change(screen.getByPlaceholderText('Enter username'), { target: { value: 'bad' } });
     fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'bad' } });
     fireEvent.submit(screen.getByRole('button', { name: /login as student/i }).closest('form'));
-    expect(screen.getByRole('alert')).toHaveTextContent('Invalid username, password, or role.');
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Invalid username, password, or role.')
+    );
   });
 
-  test('calls onLogin with user on successful login', () => {
+  test('calls onLogin with user on successful login', async () => {
     const fakeUser = { id: 1, name: 'Alice', role: 'student' };
-    Auth.login.mockReturnValue(fakeUser);
+    Auth.login.mockResolvedValue(fakeUser);
     const { onLogin } = setup();
     fireEvent.change(screen.getByPlaceholderText('Enter username'), { target: { value: 'alice' } });
     fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: '1234' } });
     fireEvent.submit(screen.getByRole('button', { name: /login as student/i }).closest('form'));
-    expect(onLogin).toHaveBeenCalledWith(fakeUser);
+    await waitFor(() => expect(onLogin).toHaveBeenCalledWith(fakeUser));
   });
 
   test('clicking Register link calls onGoToRegister', () => {

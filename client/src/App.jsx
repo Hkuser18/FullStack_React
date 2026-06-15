@@ -111,7 +111,7 @@ function App() {
           activePage={activePage}
           onNavigate={handleNavigate}
         />
-        <main className="flex-grow-1 p-4 bg-light" style={{ overflowY: 'auto' }}>
+        <main className="app-main animate-fade-in">
           {renderPage()}
         </main>
       </div>
