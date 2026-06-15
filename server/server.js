@@ -311,6 +311,29 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+// Create question_bank table if it was added after the initial DB setup
+async function migrate() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS question_bank (
+      id             TEXT        PRIMARY KEY,
+      text           TEXT        NOT NULL,
+      type           TEXT        NOT NULL DEFAULT 'multiple-choice'
+                                 CHECK (type IN ('multiple-choice', 'open')),
+      options        JSONB,
+      correct_option INT,
+      keywords       JSONB,
+      topic          TEXT        NOT NULL DEFAULT '',
+      created_by     TEXT        NOT NULL REFERENCES users(id),
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_question_bank_created_by ON question_bank(created_by)
+  `);
+  console.log('Migration complete (question_bank table ensured)');
+}
+
+app.listen(PORT, async () => {
   console.log(`ExamsApp server running on port ${PORT}`);
+  await migrate().catch(err => console.error('Migration failed:', err.message));
 });
