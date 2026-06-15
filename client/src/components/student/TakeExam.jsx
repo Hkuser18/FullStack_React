@@ -1,8 +1,6 @@
-// TakeExam - רכיב ביצוע המבחן בפועל
-// שלושה שלבים: loading (טעינה) -> taking (מבחן פעיל עם טיימר) -> result (סיכום)
-// useCallback על submit חיוני כי הפונקציה משמשת בתוך useEffect של הטיימר -
-// בלי useCallback היה נוצר closure ישן עם answers מיושנות
-// answers מאוחסנות כמערך - אינדקס = מספר שאלה, ערך = אינדקס האפשרות שנבחרה (null = לא נענה)
+// TakeExam - active exam with timer, supports multiple-choice and open questions
+// answers[i] is: number|null for MC questions, string|null for open questions
+// useCallback on submit is required — it's used inside the timer useEffect
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Api from '../../api';
 import Notify from '../../services/NotifyService';
@@ -10,6 +8,14 @@ import Logger from '../../services/LoggerService';
 
 const fmt = (secs) =>
   `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+
+const isAnswered = (q, a) =>
+  q.type === 'open' ? (typeof a === 'string' && a.trim().length > 0) : a !== null;
+
+const openMatches = (q, a) => {
+  const text = String(a ?? '').toLowerCase();
+  return (q.keywords ?? []).some(kw => text.includes(kw.toLowerCase()));
+};
 
 const TakeExam = ({ user, examId, onNavigate }) => {
   const [exam,       setExam]       = useState(null);
@@ -41,7 +47,11 @@ const TakeExam = ({ user, examId, onNavigate }) => {
     clearInterval(timerRef.current);
     setSubmitting(true);
 
-    const finalAnswers = answers.map(a => a ?? -1); // -1 = unanswered → wrong
+    const finalAnswers = answers.map((a, i) => {
+      const q = exam?.questions[i];
+      if (q?.type === 'open') return a ?? '';
+      return a ?? -1; // -1 = unanswered MC → always wrong
+    });
 
     Api.submitAttempt({ examId, studentId: user.id, answers: finalAnswers, startedAt: new Date().toISOString() })
       .then(attempt => {
@@ -57,7 +67,7 @@ const TakeExam = ({ user, examId, onNavigate }) => {
         Logger.error('TakeExam.submit', err.message);
         setSubmitting(false);
       });
-  }, [answers, examId, user.id]);
+  }, [answers, exam, examId, user.id]);
 
   // ── Timer ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -75,8 +85,11 @@ const TakeExam = ({ user, examId, onNavigate }) => {
   const selectAnswer = (qIdx, oIdx) =>
     setAnswers(prev => prev.map((a, i) => i === qIdx ? oIdx : a));
 
+  const setOpenAnswer = (qIdx, text) =>
+    setAnswers(prev => prev.map((a, i) => i === qIdx ? text : a));
+
   const handleSubmitClick = () => {
-    const unanswered = answers.filter(a => a === null).length;
+    const unanswered = exam.questions.filter((q, i) => !isAnswered(q, answers[i])).length;
     if (unanswered > 0) {
       Notify.warning(`${unanswered} question${unanswered > 1 ? 's' : ''} still unanswered. Submit anyway?`);
     }
@@ -110,7 +123,26 @@ const TakeExam = ({ user, examId, onNavigate }) => {
         <h5 className="mb-3">Answer Review</h5>
         <div className="d-flex flex-column gap-3">
           {exam.questions.map((q, i) => {
-            const selected = answers[i] ?? -1;
+            const ans = answers[i];
+
+            if (q.type === 'open') {
+              const correct = openMatches(q, ans);
+              return (
+                <div key={q.id} className={`card border-${correct ? 'success' : 'danger'}`}>
+                  <div className={`card-header bg-${correct ? 'success' : 'danger'} bg-opacity-10 d-flex justify-content-between`}>
+                    <span className="fw-semibold">Q{i + 1}. {q.text}</span>
+                    <span className={`badge bg-${correct ? 'success' : 'danger'}`}>{correct ? 'Correct' : 'Wrong'}</span>
+                  </div>
+                  <div className="card-body small">
+                    <p className="mb-1"><strong>Your answer:</strong> {ans || <em className="text-muted">no answer</em>}</p>
+                    <p className="mb-0 text-muted">Keywords: {(q.keywords ?? []).join(', ')}</p>
+                  </div>
+                </div>
+              );
+            }
+
+            // multiple-choice
+            const selected = typeof ans === 'number' ? ans : -1;
             const correct  = q.correctOption;
             const isRight  = selected === correct;
             return (
@@ -124,13 +156,13 @@ const TakeExam = ({ user, examId, onNavigate }) => {
                     const isCorrect  = j === correct;
                     const isSelected = j === selected;
                     let cls = '';
-                    if (isCorrect)              cls = 'list-group-item-success';
+                    if (isCorrect)                   cls = 'list-group-item-success';
                     else if (isSelected && !isRight) cls = 'list-group-item-danger';
                     return (
                       <li key={j} className={`list-group-item ${cls} d-flex gap-2`}>
-                        {isSelected && !isRight && <strong>[Your answer]</strong>}
+                        {isSelected && !isRight    && <strong>[Your answer]</strong>}
                         {isCorrect  && !isSelected && <strong>[Correct answer]</strong>}
-                        {isSelected && isRight    && <strong>[Your answer — Correct]</strong>}
+                        {isSelected && isRight     && <strong>[Your answer — Correct]</strong>}
                         <span>{opt}</span>
                       </li>
                     );
@@ -150,7 +182,7 @@ const TakeExam = ({ user, examId, onNavigate }) => {
   }
 
   // ── Taking ────────────────────────────────────────────────────────────────
-  const answered = answers.filter(a => a !== null).length;
+  const answered = exam.questions.filter((q, i) => isAnswered(q, answers[i])).length;
   const urgent   = timeLeft <= 60;
 
   return (
@@ -176,43 +208,63 @@ const TakeExam = ({ user, examId, onNavigate }) => {
 
       {/* Questions */}
       <div className="d-flex flex-column gap-4">
-        {exam.questions.map((q, qIdx) => (
-          <div key={q.id} className="card shadow-sm">
-            <div className="card-header bg-light d-flex justify-content-between">
-              <span className="fw-semibold">Question {qIdx + 1} of {exam.questions.length}</span>
-              {answers[qIdx] === null
-                ? <span className="badge bg-warning text-dark">Unanswered</span>
-                : <span className="badge bg-success">Answered</span>
-              }
-            </div>
-            <div className="card-body">
-              <p className="mb-3 fw-semibold">{q.text}</p>
-              <div className="d-flex flex-column gap-2">
-                {q.options.map((opt, oIdx) => {
-                  const selected = answers[qIdx] === oIdx;
-                  return (
-                    <div
-                      key={oIdx}
-                      className={`p-3 rounded border d-flex align-items-center gap-2 ${
-                        selected ? 'border-primary bg-primary bg-opacity-10' : 'border-secondary border-opacity-25'
-                      }`}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => selectAnswer(qIdx, oIdx)}
-                    >
-                      <input
-                        type="radio"
-                        name={`q-${qIdx}`}
-                        checked={selected}
-                        onChange={() => selectAnswer(qIdx, oIdx)}
-                      />
-                      <span>{opt}</span>
-                    </div>
-                  );
-                })}
+        {exam.questions.map((q, qIdx) => {
+          const ans = answers[qIdx];
+          const done = isAnswered(q, ans);
+          return (
+            <div key={q.id} className="card shadow-sm">
+              <div className="card-header bg-light d-flex justify-content-between">
+                <div className="d-flex align-items-center gap-2">
+                  <span className="fw-semibold">Question {qIdx + 1} of {exam.questions.length}</span>
+                  <span className={`badge ${q.type === 'open' ? 'bg-info' : 'bg-secondary'} bg-opacity-75`}>
+                    {q.type === 'open' ? 'Open' : 'MC'}
+                  </span>
+                </div>
+                {done
+                  ? <span className="badge bg-success">Answered</span>
+                  : <span className="badge bg-warning text-dark">Unanswered</span>
+                }
+              </div>
+              <div className="card-body">
+                <p className="mb-3 fw-semibold">{q.text}</p>
+
+                {q.type === 'open' ? (
+                  <textarea
+                    className="form-control"
+                    rows={3}
+                    placeholder="Type your answer here…"
+                    value={typeof ans === 'string' ? ans : ''}
+                    onChange={e => setOpenAnswer(qIdx, e.target.value)}
+                  />
+                ) : (
+                  <div className="d-flex flex-column gap-2">
+                    {q.options.map((opt, oIdx) => {
+                      const selected = ans === oIdx;
+                      return (
+                        <div
+                          key={oIdx}
+                          className={`p-3 rounded border d-flex align-items-center gap-2 ${
+                            selected ? 'border-primary bg-primary bg-opacity-10' : 'border-secondary border-opacity-25'
+                          }`}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => selectAnswer(qIdx, oIdx)}
+                        >
+                          <input
+                            type="radio"
+                            name={`q-${qIdx}`}
+                            checked={selected}
+                            onChange={() => selectAnswer(qIdx, oIdx)}
+                          />
+                          <span>{opt}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Footer */}

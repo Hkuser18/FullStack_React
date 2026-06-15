@@ -94,6 +94,26 @@ class ServerApiService {
     return attempted;
   }
 
+  // ── Question Bank ──────────────────────────────────────────────────────────
+
+  getQuestions() {
+    return req('GET', '/questions');
+  }
+
+  getQuestionsByTeacher(teacherId) {
+    return req('GET', `/questions/teacher/${teacherId}`);
+  }
+
+  addQuestion(data) {
+    Logger.info('ServerApiService.addQuestion', { type: data.type });
+    return req('POST', '/questions', data);
+  }
+
+  deleteQuestion(id) {
+    Logger.info('ServerApiService.deleteQuestion', { id });
+    return req('DELETE', `/questions/${id}`);
+  }
+
   // ── Utility ────────────────────────────────────────────────────────────────
 
   resetDatabase() {
