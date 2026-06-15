@@ -1,6 +1,9 @@
 import express from 'express';
 import cors from 'cors';
+import jwt from 'jsonwebtoken';
 import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS, SEED_QUESTION_BANK } from './db.js';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret';
 
 const app  = express();
 const PORT = process.env.PORT || 3002;
@@ -12,6 +15,19 @@ app.use(express.json());
 
 // Wraps async route handlers so thrown errors reach the error middleware
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next);
+
+// JWT middleware — attaches req.user or returns 401
+const auth = (req, res, next) => {
+  const header = req.headers['authorization'];
+  const token  = header && header.startsWith('Bearer ') && header.slice(7);
+  if (!token) return res.status(401).json({ error: 'No token provided' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+};
 
 // ── Reusable column lists (camelCase aliases match the mock API shape) ─────────
 
@@ -51,7 +67,9 @@ app.post('/api/auth/login', wrap(async (req, res) => {
     [username, password, role]
   );
   if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
-  res.json(rows[0]);
+  const user  = rows[0];
+  const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+  res.json({ ...user, token });
 }));
 
 app.post('/api/auth/register', wrap(async (req, res) => {
@@ -70,12 +88,12 @@ app.post('/api/auth/register', wrap(async (req, res) => {
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
-app.get('/api/users', wrap(async (_req, res) => {
+app.get('/api/users', auth, wrap(async (_req, res) => {
   const { rows } = await pool.query('SELECT id, username, role, name FROM users');
   res.json(rows);
 }));
 
-app.get('/api/users/:id', wrap(async (req, res) => {
+app.get('/api/users/:id', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     'SELECT id, username, role, name FROM users WHERE id=$1',
     [req.params.id]
@@ -87,19 +105,19 @@ app.get('/api/users/:id', wrap(async (req, res) => {
 // ── Exams ─────────────────────────────────────────────────────────────────────
 // NOTE: specific routes (/published, /teacher/:id) must come before /:id
 
-app.get('/api/exams', wrap(async (_req, res) => {
+app.get('/api/exams', auth, wrap(async (_req, res) => {
   const { rows } = await pool.query(`SELECT ${EXAM_COLS} FROM exams`);
   res.json(rows);
 }));
 
-app.get('/api/exams/published', wrap(async (_req, res) => {
+app.get('/api/exams/published', auth, wrap(async (_req, res) => {
   const { rows } = await pool.query(
     `SELECT ${EXAM_COLS} FROM exams WHERE status='published'`
   );
   res.json(rows);
 }));
 
-app.get('/api/exams/teacher/:teacherId', wrap(async (req, res) => {
+app.get('/api/exams/teacher/:teacherId', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT ${EXAM_COLS} FROM exams WHERE created_by=$1`,
     [req.params.teacherId]
@@ -107,7 +125,7 @@ app.get('/api/exams/teacher/:teacherId', wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.get('/api/exams/:id', wrap(async (req, res) => {
+app.get('/api/exams/:id', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT ${EXAM_COLS} FROM exams WHERE id=$1`,
     [req.params.id]
@@ -116,7 +134,7 @@ app.get('/api/exams/:id', wrap(async (req, res) => {
   res.json(rows[0]);
 }));
 
-app.post('/api/exams', wrap(async (req, res) => {
+app.post('/api/exams', auth, wrap(async (req, res) => {
   const {
     title = 'Untitled Exam', description = '', duration = 30,
     passingScore = 60, createdBy, questions = [],
@@ -131,7 +149,7 @@ app.post('/api/exams', wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
-app.put('/api/exams/:id', wrap(async (req, res) => {
+app.put('/api/exams/:id', auth, wrap(async (req, res) => {
   const { title, description, duration, passingScore, questions } = req.body;
   const { rows } = await pool.query(
     `UPDATE exams
@@ -144,13 +162,13 @@ app.put('/api/exams/:id', wrap(async (req, res) => {
   res.json(rows[0]);
 }));
 
-app.delete('/api/exams/:id', wrap(async (req, res) => {
+app.delete('/api/exams/:id', auth, wrap(async (req, res) => {
   const { rowCount } = await pool.query('DELETE FROM exams WHERE id=$1', [req.params.id]);
   if (!rowCount) return res.status(404).json({ error: 'Exam not found' });
   res.json({ success: true });
 }));
 
-app.patch('/api/exams/:id/status', wrap(async (req, res) => {
+app.patch('/api/exams/:id/status', auth, wrap(async (req, res) => {
   const { status } = req.body;
   if (!EXAM_STATUSES.includes(status))
     return res.status(400).json({ error: `Invalid status: ${status}` });
@@ -164,7 +182,7 @@ app.patch('/api/exams/:id/status', wrap(async (req, res) => {
 
 // ── Attempts ──────────────────────────────────────────────────────────────────
 
-app.post('/api/attempts', wrap(async (req, res) => {
+app.post('/api/attempts', auth, wrap(async (req, res) => {
   const { examId, studentId, answers, startedAt } = req.body;
 
   const { rows: exRows } = await pool.query(
@@ -196,7 +214,7 @@ app.post('/api/attempts', wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
-app.get('/api/attempts/student/:studentId', wrap(async (req, res) => {
+app.get('/api/attempts/student/:studentId', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT ${ATTEMPT_COLS} FROM attempts WHERE student_id=$1`,
     [req.params.studentId]
@@ -204,7 +222,7 @@ app.get('/api/attempts/student/:studentId', wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.get('/api/attempts/exam/:examId', wrap(async (req, res) => {
+app.get('/api/attempts/exam/:examId', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT ${ATTEMPT_COLS} FROM attempts WHERE exam_id=$1`,
     [req.params.examId]
@@ -212,7 +230,7 @@ app.get('/api/attempts/exam/:examId', wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.get('/api/attempts/check/:studentId/:examId', wrap(async (req, res) => {
+app.get('/api/attempts/check/:studentId/:examId', auth, wrap(async (req, res) => {
   const { studentId, examId } = req.params;
   const { rows } = await pool.query(
     'SELECT 1 FROM attempts WHERE student_id=$1 AND exam_id=$2 LIMIT 1',
@@ -223,12 +241,12 @@ app.get('/api/attempts/check/:studentId/:examId', wrap(async (req, res) => {
 
 // ── Question Bank ─────────────────────────────────────────────────────────────
 
-app.get('/api/questions', wrap(async (_req, res) => {
+app.get('/api/questions', auth, wrap(async (_req, res) => {
   const { rows } = await pool.query(`SELECT ${QB_COLS} FROM question_bank ORDER BY created_at DESC`);
   res.json(rows);
 }));
 
-app.get('/api/questions/teacher/:teacherId', wrap(async (req, res) => {
+app.get('/api/questions/teacher/:teacherId', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT ${QB_COLS} FROM question_bank WHERE created_by=$1 ORDER BY created_at DESC`,
     [req.params.teacherId]
@@ -236,7 +254,7 @@ app.get('/api/questions/teacher/:teacherId', wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post('/api/questions', wrap(async (req, res) => {
+app.post('/api/questions', auth, wrap(async (req, res) => {
   const { text, type = 'multiple-choice', options, correctOption, keywords, topic = '', createdBy } = req.body;
   const id = `qb_${Date.now()}`;
   const { rows } = await pool.query(
@@ -252,7 +270,7 @@ app.post('/api/questions', wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
-app.delete('/api/questions/:id', wrap(async (req, res) => {
+app.delete('/api/questions/:id', auth, wrap(async (req, res) => {
   const { rowCount } = await pool.query('DELETE FROM question_bank WHERE id=$1', [req.params.id]);
   if (!rowCount) return res.status(404).json({ error: 'Question not found' });
   res.json({ success: true });
@@ -260,7 +278,7 @@ app.delete('/api/questions/:id', wrap(async (req, res) => {
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
-app.post('/api/db/reset', wrap(async (_req, res) => {
+app.post('/api/db/reset', auth, wrap(async (_req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
