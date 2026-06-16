@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
+import QuestionImportExport from '../shared/QuestionImportExport';
 
 const newMcQuestion = () => ({
   id:            `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -20,7 +21,6 @@ const newOpenQuestion = () => ({
   text:     '',
   type:     'open',
   keywords: [],
-  rawKeywords: '',
 });
 
 const ExamForm = ({ user, examId, onNavigate }) => {
@@ -30,6 +30,8 @@ const ExamForm = ({ user, examId, onNavigate }) => {
   const [description,  setDescription]  = useState('');
   const [duration,     setDuration]     = useState(30);
   const [passingScore, setPassingScore] = useState(60);
+  const [startDate,    setStartDate]    = useState('');
+  const [endDate,      setEndDate]      = useState('');
   const [questions,    setQuestions]    = useState([newMcQuestion()]);
   const [loading,      setLoading]      = useState(isEdit);
   const [saving,       setSaving]       = useState(false);
@@ -47,6 +49,8 @@ const ExamForm = ({ user, examId, onNavigate }) => {
         setDescription(exam.description);
         setDuration(exam.duration);
         setPassingScore(exam.passingScore);
+        setStartDate(exam.startDate ? exam.startDate.slice(0, 16) : '');
+        setEndDate(exam.endDate   ? exam.endDate.slice(0, 16)   : '');
         setQuestions(exam.questions);
         setLoading(false);
       })
@@ -71,9 +75,12 @@ const ExamForm = ({ user, examId, onNavigate }) => {
       i === qIdx ? { ...q, options: q.options.map((o, j) => j === oIdx ? value : o) } : q
     ));
 
-  // keywords stored as array; edited as comma-separated string
-  const updateKeywords = (qIdx, raw) =>
-    setQuestions(p => p.map((q, idx) => idx === qIdx ? { ...q, rawKeywords: raw, keywords: raw.split(',').map(k => k.trim()).filter(Boolean) } : q));
+  // keywords: store raw string while typing, parse to array on blur
+  const updateKeywordsRaw = (qIdx, raw) =>
+    updateQuestion(qIdx, '_keywordsRaw', raw);
+
+  const commitKeywords = (qIdx, raw) =>
+    updateQuestion(qIdx, 'keywords', raw.split(',').map(k => k.trim()).filter(Boolean));
 
   // ── Bank import ───────────────────────────────────────────────────────────
 
@@ -128,12 +135,15 @@ const ExamForm = ({ user, examId, onNavigate }) => {
     if (!validate()) return;
     setSaving(true);
 
+    const cleanQuestions = questions.map(({ _keywordsRaw, ...q }) => q);
     const payload = {
       title, description,
       duration:     Number(duration),
       passingScore: Number(passingScore),
-      questions,
+      questions:    cleanQuestions,
       createdBy: user.id,
+      startDate: startDate || null,
+      endDate:   endDate   || null,
     };
 
     const op = isEdit ? Api.updateExam(examId, payload) : Api.createExam(payload);
@@ -156,7 +166,7 @@ const ExamForm = ({ user, examId, onNavigate }) => {
   );
 
   return (
-    <div style={{ maxWidth: 780, margin: '0 auto' }}>
+    <div style={{ maxWidth: 960, margin: '0 auto' }}>
       <div className="d-flex align-items-center gap-3 mb-4">
         <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => onNavigate('my-exams')}>
           &larr; Back
@@ -187,6 +197,14 @@ const ExamForm = ({ user, examId, onNavigate }) => {
                 <label className="form-label fw-semibold">Passing Score (%)</label>
                 <input type="number" className="form-control" min={1} max={100} value={passingScore} onChange={e => setPassingScore(e.target.value)} required />
               </div>
+              <div className="col-sm-6">
+                <label className="form-label fw-semibold">Available From <span className="text-muted fw-normal">(optional)</span></label>
+                <input type="datetime-local" className="form-control" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              </div>
+              <div className="col-sm-6">
+                <label className="form-label fw-semibold">Available Until <span className="text-muted fw-normal">(optional)</span></label>
+                <input type="datetime-local" className="form-control" value={endDate} onChange={e => setEndDate(e.target.value)} />
+              </div>
             </div>
           </div>
         </div>
@@ -196,7 +214,8 @@ const ExamForm = ({ user, examId, onNavigate }) => {
           <div className="card-header bg-secondary text-white">
             <div className="d-flex justify-content-between align-items-center">
               <span className="fw-semibold">Questions ({questions.length})</span>
-              <div className="d-flex gap-2">
+              <div className="d-flex gap-2 flex-wrap">
+                <QuestionImportExport onImport={(qs) => setQuestions(p => [...p, ...qs])} questionsToExport={questions} />
                 <button type="button" className="btn btn-light btn-sm" onClick={addMcQuestion}>+ Multiple Choice</button>
                 <button type="button" className="btn btn-light btn-sm" onClick={addOpenQuestion}>+ Open</button>
                 <button type="button" className="btn btn-warning btn-sm" onClick={openBank}>📥 Import from Bank</button>
@@ -293,11 +312,19 @@ const ExamForm = ({ user, examId, onNavigate }) => {
                       <input
                         className="form-control"
                         placeholder="e.g. closure, scope, lexical"
-                        value={q.rawKeywords !== undefined ? q.rawKeywords : (q.keywords ?? []).join(', ')}
-                        onChange={e => updateKeywords(qIdx, e.target.value)}
+                        value={q._keywordsRaw ?? (q.keywords ?? []).join(', ')}
+                        onChange={e => updateKeywordsRaw(qIdx, e.target.value)}
+                        onBlur={e => commitKeywords(qIdx, e.target.value)}
                       />
                     </div>
-                    <small className="text-muted">Student answer scores if it contains any keyword (case-insensitive).</small>
+                    <small className="text-muted">
+                      Student answer scores if it contains any keyword (case-insensitive).
+                      {(q.keywords ?? []).length > 0 && (
+                        <span className="ms-2 text-success">
+                          Saved: {q.keywords.join(', ')}
+                        </span>
+                      )}
+                    </small>
                   </>
                 )}
               </div>

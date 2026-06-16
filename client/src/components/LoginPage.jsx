@@ -51,6 +51,13 @@ const LoginPage = ({ onLogin, onGoToRegister }) => {
             >
               Teacher
             </button>
+            <button
+              type="button"
+              className={`role-toggle-btn${role === 'admin' ? ' active' : ''}`}
+              onClick={() => setRole('admin')}
+            >
+              Admin
+            </button>
           </div>
 
           <form onSubmit={handleSubmit}>
