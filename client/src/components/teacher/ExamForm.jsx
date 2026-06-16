@@ -20,6 +20,7 @@ const newOpenQuestion = () => ({
   text:     '',
   type:     'open',
   keywords: [],
+  rawKeywords: '',
 });
 
 const ExamForm = ({ user, examId, onNavigate }) => {
@@ -72,7 +73,7 @@ const ExamForm = ({ user, examId, onNavigate }) => {
 
   // keywords stored as array; edited as comma-separated string
   const updateKeywords = (qIdx, raw) =>
-    updateQuestion(qIdx, 'keywords', raw.split(',').map(k => k.trim()).filter(Boolean));
+    setQuestions(p => p.map((q, idx) => idx === qIdx ? { ...q, rawKeywords: raw, keywords: raw.split(',').map(k => k.trim()).filter(Boolean) } : q));
 
   // ── Bank import ───────────────────────────────────────────────────────────
 
@@ -292,7 +293,7 @@ const ExamForm = ({ user, examId, onNavigate }) => {
                       <input
                         className="form-control"
                         placeholder="e.g. closure, scope, lexical"
-                        value={(q.keywords ?? []).join(', ')}
+                        value={q.rawKeywords !== undefined ? q.rawKeywords : (q.keywords ?? []).join(', ')}
                         onChange={e => updateKeywords(qIdx, e.target.value)}
                       />
                     </div>
