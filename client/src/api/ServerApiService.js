@@ -1,9 +1,18 @@
-// ServerApiService - fetch-based API client for the Express server (port 3001)
+// ServerApiService - fetch-based API client for the Express server
 // All methods return Promises, matching MockApiService's interface exactly.
 import Logger from '../services/LoggerService';
 
+const TOKEN_KEY = 'auth_token';
+
+export const saveToken  = token => localStorage.setItem(TOKEN_KEY, token);
+export const clearToken = ()    => localStorage.removeItem(TOKEN_KEY);
+const getToken          = ()    => localStorage.getItem(TOKEN_KEY);
+
 async function req(method, path, body) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const opts = { method, headers };
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch(`/api${path}`, opts);
   if (!res.ok) {
@@ -104,19 +113,33 @@ class ServerApiService {
     return req('GET', `/questions/teacher/${teacherId}`);
   }
 
-  updateQuestion(id, data) {
-    Logger.info('ServerApiService.updateQuestion', { id });
-    return req('PUT', `/questions/${id}`, data);
-  }
-
   addQuestion(data) {
     Logger.info('ServerApiService.addQuestion', { type: data.type });
     return req('POST', '/questions', data);
   }
 
+  updateQuestion(id, data) {
+    Logger.info('ServerApiService.updateQuestion', { id });
+    return req('PUT', `/questions/${id}`, data);
+  }
+
   deleteQuestion(id) {
     Logger.info('ServerApiService.deleteQuestion', { id });
     return req('DELETE', `/questions/${id}`);
+  }
+
+  // ── Admin ──────────────────────────────────────────────────────────────────
+
+  getPendingTeachers() {
+    return req('GET', '/admin/teachers/pending');
+  }
+
+  approveTeacher(id) {
+    return req('PATCH', `/admin/teachers/${id}/approve`);
+  }
+
+  rejectTeacher(id) {
+    return req('PATCH', `/admin/teachers/${id}/reject`);
   }
 
   // ── Utility ────────────────────────────────────────────────────────────────

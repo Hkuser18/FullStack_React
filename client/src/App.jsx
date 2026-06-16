@@ -11,6 +11,7 @@ import ExamList       from './components/teacher/ExamList';
 import ExamForm       from './components/teacher/ExamForm';
 import StudentResults from './components/teacher/StudentResults';
 import QuestionBank   from './components/teacher/QuestionBank';
+import AdminPanel     from './components/admin/AdminPanel';
 
 import AvailableExams from './components/student/AvailableExams';
 import TakeExam       from './components/student/TakeExam';
@@ -21,20 +22,22 @@ import Logger from './services/LoggerService';
 import Notify from './services/NotifyService';
 import './App.css';
 
-const DEFAULT_PAGE = { teacher: 'my-exams', student: 'available-exams' };
+const DEFAULT_PAGE = { teacher: 'my-exams', student: 'available-exams', admin: 'admin-panel' };
 
 function App() {
-  const [user,       setUser]   = useState(() => Auth.getCurrentUser());
-  const [screen,     setScreen] = useState('login');
-  const [activePage, setPage]   = useState(() => {
+  const [user,        setUser]        = useState(() => Auth.getCurrentUser());
+  const [screen,      setScreen]      = useState('login');
+  const [activePage,  setPage]        = useState(() => {
     const u = Auth.getCurrentUser();
     return u ? DEFAULT_PAGE[u.role] : null;
   });
-  const [pageParams, setParams] = useState({});
+  const [pageParams,  setParams]      = useState({});
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleNavigate = (page, params = {}) => {
     setPage(page);
     setParams(params);
+    setSidebarOpen(false);
   };
 
   const handleLogin = (loggedInUser) => {
@@ -50,6 +53,7 @@ function App() {
     setScreen('login');
     setPage(null);
     setParams({});
+    setSidebarOpen(false);
     Logger.info('App: user logged out');
   };
 
@@ -97,6 +101,10 @@ function App() {
       case 'my-results':
         return <MyResults user={user} onNavigate={handleNavigate} />;
 
+      // Admin pages
+      case 'admin-panel':
+        return <AdminPanel user={user} onNavigate={handleNavigate} />;
+
       default:
         return <ComingSoon title="Page not found" />;
     }
@@ -104,15 +112,24 @@ function App() {
 
   // ── Authenticated layout ──────────────────────────────────────────────────
   return (
-    <div className="d-flex flex-column" style={{ height: '100vh' }}>
+    <div className="app-root">
       <NotifyToast />
-      <NavBar user={user} onLogout={handleLogout} />
+      <NavBar
+        user={user}
+        onLogout={handleLogout}
+        onToggleSidebar={() => setSidebarOpen(s => !s)}
+        sidebarOpen={sidebarOpen}
+      />
 
-      <div className="d-flex flex-row flex-grow-1" style={{ overflow: 'hidden' }}>
+      <div className="app-body">
+        {sidebarOpen && (
+          <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+        )}
         <SideMenu
           role={user.role}
           activePage={activePage}
           onNavigate={handleNavigate}
+          isOpen={sidebarOpen}
         />
         <main className="app-main animate-fade-in">
           {renderPage()}

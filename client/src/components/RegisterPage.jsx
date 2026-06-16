@@ -26,10 +26,14 @@ const RegisterPage = ({ onRegister, onGoToLogin }) => {
     }
 
     Auth.register({ username, password, role, name: username })
-      .then(() => {
-        Notify.success('Account created! You can now log in.');
-        setSuccess('Account created! You can now log in.');
-        onRegister();
+      .then((user) => {
+        if (role === 'teacher') {
+          setSuccess('Teacher account created! An admin must approve it before you can log in.');
+          Notify.info('Awaiting admin approval — check back later.');
+        } else {
+          Notify.success('Account created! You can now log in.');
+          onRegister();
+        }
       })
       .catch((err) => {
         setError(err.message);

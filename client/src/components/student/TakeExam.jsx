@@ -107,7 +107,7 @@ const TakeExam = ({ user, examId, onNavigate }) => {
   if (phase === 'result' && result) {
     const passed = result.passed;
     return (
-      <div style={{ maxWidth: 700, margin: '0 auto' }} className="animate-fade-in">
+      <div style={{ maxWidth: 860, margin: '0 auto' }} className="animate-fade-in">
         <div className="result-card">
           <div className={`score-circle ${passed ? 'pass' : 'fail'}`}>{result.score}%</div>
           <h3 className="fw-bold mb-1" style={{ color: passed ? 'var(--success)' : 'var(--danger)' }}>
@@ -186,7 +186,7 @@ const TakeExam = ({ user, examId, onNavigate }) => {
   const urgent   = timeLeft <= 60;
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+    <div style={{ maxWidth: 860, margin: '0 auto' }}>
       {/* Sticky header */}
       <div className="d-flex justify-content-between align-items-center mb-3 p-3 bg-white rounded shadow-sm sticky-top">
         <div>
@@ -197,6 +197,13 @@ const TakeExam = ({ user, examId, onNavigate }) => {
           ⏱ {fmt(timeLeft)}
         </div>
       </div>
+
+      {/* Low-time warning */}
+      {urgent && (
+        <div className="alert alert-danger py-2 mb-3 fw-semibold text-center animate-fade-in" role="alert">
+          ⚠️ Less than 1 minute remaining! The exam will auto-submit when time runs out.
+        </div>
+      )}
 
       {/* Progress */}
       <div className="progress mb-4" style={{ height: 6 }}>
