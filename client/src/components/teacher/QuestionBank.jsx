@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
+import QuestionImportExport from '../shared/QuestionImportExport';
 
 const EMPTY_FORM = {
   text:          '',
@@ -106,6 +107,29 @@ const QuestionBank = ({ user }) => {
     }
   };
 
+  const handleImport = (importedQuestions) => {
+    // Add each imported question to the API
+    Promise.all(importedQuestions.map(q => {
+      const data = {
+        text: q.text,
+        type: q.type,
+        topic: q.topic,
+        createdBy: user.id,
+        ...(q.type === 'multiple-choice'
+          ? { options: q.options, correctOption: q.correctOption }
+          : { keywords: q.keywords }),
+      };
+      return Api.addQuestion(data);
+    }))
+    .then(addedQs => {
+      setQuestions(prev => [...addedQs, ...prev]);
+    })
+    .catch(err => {
+      Notify.error('Some questions failed to import.');
+      Logger.error('QuestionBank.import', err.message);
+    });
+  };
+
   const handleDelete = (id) => {
     Api.deleteQuestion(id)
       .then(() => {
@@ -122,12 +146,15 @@ const QuestionBank = ({ user }) => {
     <div style={{ maxWidth: 780, margin: '0 auto' }}>
       <div className="d-flex align-items-center justify-content-between mb-4">
         <h4 className="mb-0">🗂️ Question Bank</h4>
-        <button className="btn btn-primary" onClick={() => {
-          if (showForm) resetForm();
-          else setShowForm(true);
-        }}>
-          {showForm ? '✕ Cancel' : '+ Add Question'}
-        </button>
+        <div className="d-flex gap-2">
+          <QuestionImportExport onImport={handleImport} questionsToExport={questions} />
+          <button className="btn btn-primary" onClick={() => {
+            if (showForm) resetForm();
+            else setShowForm(true);
+          }}>
+            {showForm ? '✕ Cancel' : '+ Add Question'}
+          </button>
+        </div>
       </div>
 
       {/* Add form */}

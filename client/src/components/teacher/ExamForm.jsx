@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
+import QuestionImportExport from '../shared/QuestionImportExport';
 
 const newMcQuestion = () => ({
   id:            `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -196,7 +197,8 @@ const ExamForm = ({ user, examId, onNavigate }) => {
           <div className="card-header bg-secondary text-white">
             <div className="d-flex justify-content-between align-items-center">
               <span className="fw-semibold">Questions ({questions.length})</span>
-              <div className="d-flex gap-2">
+              <div className="d-flex gap-2 flex-wrap">
+                <QuestionImportExport onImport={(qs) => setQuestions(p => [...p, ...qs])} questionsToExport={questions} />
                 <button type="button" className="btn btn-light btn-sm" onClick={addMcQuestion}>+ Multiple Choice</button>
                 <button type="button" className="btn btn-light btn-sm" onClick={addOpenQuestion}>+ Open</button>
                 <button type="button" className="btn btn-warning btn-sm" onClick={openBank}>📥 Import from Bank</button>
