@@ -1,8 +1,20 @@
-const NavBar = ({ user, onLogout }) => (
+const NavBar = ({ user, onLogout, onToggleSidebar, sidebarOpen }) => (
   <nav className="app-navbar">
-    <div className="brand">
-      <div className="brand-icon">📝</div>
-      E-Test System
+    <div className="navbar-left">
+      <button
+        className="hamburger-btn"
+        onClick={onToggleSidebar}
+        aria-label="Toggle menu"
+        aria-expanded={sidebarOpen}
+      >
+        <span className={`hamburger-line${sidebarOpen ? ' open' : ''}`} />
+        <span className={`hamburger-line${sidebarOpen ? ' open' : ''}`} />
+        <span className={`hamburger-line${sidebarOpen ? ' open' : ''}`} />
+      </button>
+      <div className="brand">
+        <div className="brand-icon">📝</div>
+        <span className="brand-text">E-Test System</span>
+      </div>
     </div>
 
     <div className="user-area">

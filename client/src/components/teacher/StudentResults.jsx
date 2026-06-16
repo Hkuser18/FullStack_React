@@ -1,10 +1,66 @@
-// StudentResults - דף תוצאות תלמידים למורה
-// מציג סטטיסטיקות ורשימת ניסיונות לכל מבחן שהמורה יצר
-// ה-usersMap ממיר מזהי תלמידים לשמות קריאים - לא חושף סיסמאות
 import { useState, useEffect } from 'react';
 import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
+
+const SCORE_BUCKETS = [
+  { label: '0–59',  min: 0,  max: 59  },
+  { label: '60–69', min: 60, max: 69  },
+  { label: '70–79', min: 70, max: 79  },
+  { label: '80–89', min: 80, max: 89  },
+  { label: '90–100',min: 90, max: 100 },
+];
+
+function ScoreChart({ attempts }) {
+  const counts = SCORE_BUCKETS.map(b =>
+    attempts.filter(a => a.score >= b.min && a.score <= b.max).length
+  );
+  const max = Math.max(...counts, 1);
+  return (
+    <div className="card shadow-sm mb-4">
+      <div className="card-header bg-light fw-semibold">Score Distribution</div>
+      <div className="card-body">
+        <div className="d-flex align-items-flex-end gap-2" style={{ height: 120, alignItems: 'flex-end' }}>
+          {SCORE_BUCKETS.map((b, i) => (
+            <div key={b.label} className="d-flex flex-column align-items-center flex-grow-1">
+              <span className="small text-muted mb-1">{counts[i]}</span>
+              <div
+                style={{
+                  width: '100%',
+                  height: `${Math.round((counts[i] / max) * 80) + 4}px`,
+                  background: i === 0 ? 'var(--danger)' : 'var(--primary)',
+                  borderRadius: '4px 4px 0 0',
+                  transition: 'height 0.3s',
+                }}
+              />
+              <span className="small text-muted mt-1" style={{ fontSize: '0.7rem' }}>{b.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function exportCsv(attempts, usersMap, examTitle) {
+  const rows = [
+    ['Student', 'Score (%)', 'Passed', 'Submitted'],
+    ...attempts.map(a => [
+      usersMap[a.studentId]?.name ?? a.studentId,
+      a.score,
+      a.passed ? 'Yes' : 'No',
+      new Date(a.submittedAt).toLocaleString(),
+    ]),
+  ];
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `${examTitle.replace(/\s+/g, '_')}_results.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
   const [exams,           setExams]           = useState([]);
@@ -85,10 +141,18 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
       ) : attempts.length === 0 ? (
         <div className="alert alert-info">No submissions yet for this exam.</div>
       ) : (
-        <div className="card shadow-sm">
-          <div className="card-header bg-light fw-semibold">
-            Results — {selectedExam?.title}
-          </div>
+        <>
+          <ScoreChart attempts={attempts} />
+          <div className="card shadow-sm">
+            <div className="card-header bg-light fw-semibold d-flex justify-content-between align-items-center">
+              <span>Results — {selectedExam?.title}</span>
+              <button
+                className="btn btn-sm btn-outline-success"
+                onClick={() => exportCsv(attempts, usersMap, selectedExam?.title ?? 'results')}
+              >
+                ⬇ Export CSV
+              </button>
+            </div>
           <div className="table-responsive">
             <table className="table table-hover mb-0">
               <thead className="table-light">
@@ -118,6 +182,7 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
             </table>
           </div>
         </div>
+        </>
       )}
     </div>
   );

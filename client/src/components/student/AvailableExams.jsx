@@ -8,12 +8,20 @@ const AvailableExams = ({ user, onNavigate }) => {
   const [attempted, setAttempted] = useState({});
   const [loading,   setLoading]   = useState(true);
 
+  const isWithinSchedule = (exam) => {
+    const now = Date.now();
+    if (exam.startDate && now < new Date(exam.startDate).getTime()) return false;
+    if (exam.endDate   && now > new Date(exam.endDate).getTime())   return false;
+    return true;
+  };
+
   useEffect(() => {
     Api.getPublishedExams()
       .then(data => {
-        setExams(data);
+        const visible = data.filter(isWithinSchedule);
+        setExams(visible);
         return Promise.all(
-          data.map(e => Api.hasAttempted(user.id, e.id).then(has => [e.id, has]))
+          visible.map(e => Api.hasAttempted(user.id, e.id).then(has => [e.id, has]))
         );
       })
       .then(pairs => {
@@ -61,6 +69,11 @@ const AvailableExams = ({ user, onNavigate }) => {
                     <span className="text-muted-app">
                       {exam.questions.length} questions · {exam.duration} min · Pass: {exam.passingScore}%
                     </span>
+                    {exam.endDate && (
+                      <span className="text-muted-app d-block" style={{ fontSize: '0.8rem' }}>
+                        ⏰ Closes {new Date(exam.endDate).toLocaleString()}
+                      </span>
+                    )}
                   </div>
 
                   <button

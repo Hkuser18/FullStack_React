@@ -24,10 +24,11 @@ pool.query('SELECT NOW()', (err, res) => {
 // ── Seed data (used by /api/db/reset) ─────────────────────────────────────────
 
 export const SEED_USERS = [
-  { id: 'u1', username: 'teacher1', password: 'pass123', role: 'teacher', name: 'Dr. Smith' },
-  { id: 'u2', username: 'teacher2', password: 'pass123', role: 'teacher', name: 'Prof. Cohen' },
-  { id: 'u3', username: 'student1', password: 'pass123', role: 'student', name: 'Alice' },
-  { id: 'u4', username: 'student2', password: 'pass123', role: 'student', name: 'Bob' },
+  { id: 'u0', username: 'admin',    password: 'pass123', role: 'admin',   name: 'Admin',       status: 'active' },
+  { id: 'u1', username: 'teacher1', password: 'pass123', role: 'teacher', name: 'Dr. Smith',   status: 'active' },
+  { id: 'u2', username: 'teacher2', password: 'pass123', role: 'teacher', name: 'Prof. Cohen', status: 'active' },
+  { id: 'u3', username: 'student1', password: 'pass123', role: 'student', name: 'Alice',       status: 'active' },
+  { id: 'u4', username: 'student2', password: 'pass123', role: 'student', name: 'Bob',         status: 'active' },
 ];
 
 export const SEED_EXAMS = [

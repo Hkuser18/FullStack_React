@@ -10,13 +10,21 @@ const STUDENT_ITEMS = [
   { key: 'my-results',      label: 'My Results',      icon: '🏆' },
 ];
 
-const SideMenu = ({ role, activePage, onNavigate }) => {
-  const items = role === 'teacher' ? TEACHER_ITEMS : STUDENT_ITEMS;
+const ADMIN_ITEMS = [
+  { key: 'admin-panel', label: 'Teacher Approvals', icon: '🛡️' },
+];
+
+const ROLE_LABELS = { teacher: 'Teacher Panel', student: 'Student Panel', admin: 'Admin Panel' };
+
+const SideMenu = ({ role, activePage, onNavigate, isOpen }) => {
+  const items = role === 'teacher' ? TEACHER_ITEMS
+              : role === 'admin'   ? ADMIN_ITEMS
+              : STUDENT_ITEMS;
 
   return (
-    <aside className="app-sidebar">
+    <aside className={`app-sidebar${isOpen ? ' open' : ''}`}>
       <div className="sidebar-header">
-        <span>{role === 'teacher' ? 'Teacher Panel' : 'Student Panel'}</span>
+        <span>{ROLE_LABELS[role] ?? 'Panel'}</span>
       </div>
 
       <nav className="sidebar-nav">

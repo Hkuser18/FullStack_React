@@ -29,6 +29,13 @@ const auth = (req, res, next) => {
   }
 };
 
+// Role-guard middleware factory — use after auth
+const requireRole = (...roles) => (req, res, next) => {
+  if (!roles.includes(req.user.role))
+    return res.status(403).json({ error: 'Forbidden: insufficient role' });
+  next();
+};
+
 // ── Reusable column lists (camelCase aliases match the mock API shape) ─────────
 
 const QB_COLS = `
@@ -45,6 +52,8 @@ const EXAM_COLS = `
   duration,
   passing_score AS "passingScore",
   created_at    AS "createdAt",
+  start_date    AS "startDate",
+  end_date      AS "endDate",
   questions
 `;
 
@@ -62,33 +71,67 @@ const ATTEMPT_COLS = `
 app.post('/api/auth/login', wrap(async (req, res) => {
   const { username, password, role } = req.body;
   const { rows } = await pool.query(
-    `SELECT id, username, role, name FROM users
+    `SELECT id, username, role, name, status FROM users
      WHERE username=$1 AND password=$2 AND role=$3`,
     [username, password, role]
   );
   if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
-  const user  = rows[0];
+  const user = rows[0];
+  if (user.status === 'pending')
+    return res.status(403).json({ error: 'Your teacher account is awaiting admin approval.' });
   const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-  res.json({ ...user, token });
+  const { status: _s, ...publicUser } = user;
+  res.json({ ...publicUser, token });
 }));
 
 app.post('/api/auth/register', wrap(async (req, res) => {
   const { username, password, name, role } = req.body;
   const dup = await pool.query('SELECT id FROM users WHERE username=$1', [username]);
   if (dup.rows.length) return res.status(409).json({ error: 'Username already taken' });
-  const id = `u_${Date.now()}`;
+  const id     = `u_${Date.now()}`;
+  const status = role === 'teacher' ? 'pending' : 'active';
   const { rows } = await pool.query(
-    `INSERT INTO users (id, username, password, role, name)
-     VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO users (id, username, password, role, name, status)
+     VALUES ($1,$2,$3,$4,$5,$6)
      RETURNING id, username, role, name`,
-    [id, username, password, role, name]
+    [id, username, password, role, name, status]
   );
-  res.status(201).json(rows[0]);
+  const msg = role === 'teacher'
+    ? 'Teacher account created — awaiting admin approval before you can log in.'
+    : null;
+  res.status(201).json({ ...rows[0], ...(msg && { message: msg }) });
+}));
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+app.get('/api/admin/teachers/pending', auth, requireRole('admin'), wrap(async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, username, name, role FROM users WHERE role='teacher' AND status='pending'`
+  );
+  res.json(rows);
+}));
+
+app.patch('/api/admin/teachers/:id/approve', auth, requireRole('admin'), wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE users SET status='active' WHERE id=$1 AND role='teacher' RETURNING id, username, name, role`,
+    [req.params.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Teacher not found' });
+  res.json(rows[0]);
+}));
+
+app.patch('/api/admin/teachers/:id/reject', auth, requireRole('admin'), wrap(async (req, res) => {
+  const { rowCount } = await pool.query(
+    `DELETE FROM users WHERE id=$1 AND role='teacher' AND status='pending'`,
+    [req.params.id]
+  );
+  if (!rowCount) return res.status(404).json({ error: 'Pending teacher not found' });
+  res.json({ success: true });
 }));
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
-app.get('/api/users', auth, wrap(async (_req, res) => {
+app.get('/api/users', auth, requireRole('teacher', 'admin'), wrap(async (_req, res) => {
   const { rows } = await pool.query('SELECT id, username, role, name FROM users');
   res.json(rows);
 }));
@@ -134,41 +177,41 @@ app.get('/api/exams/:id', auth, wrap(async (req, res) => {
   res.json(rows[0]);
 }));
 
-app.post('/api/exams', auth, wrap(async (req, res) => {
+app.post('/api/exams', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
   const {
     title = 'Untitled Exam', description = '', duration = 30,
-    passingScore = 60, createdBy, questions = [],
+    passingScore = 60, createdBy, questions = [], startDate = null, endDate = null,
   } = req.body;
   const id = `e_${Date.now()}`;
   const { rows } = await pool.query(
-    `INSERT INTO exams (id, title, description, status, created_by, duration, passing_score, questions)
-     VALUES ($1,$2,$3,'draft',$4,$5,$6,$7)
+    `INSERT INTO exams (id, title, description, status, created_by, duration, passing_score, questions, start_date, end_date)
+     VALUES ($1,$2,$3,'draft',$4,$5,$6,$7,$8,$9)
      RETURNING ${EXAM_COLS}`,
-    [id, title, description, createdBy, duration, passingScore, JSON.stringify(questions)]
+    [id, title, description, createdBy, duration, passingScore, JSON.stringify(questions), startDate, endDate]
   );
   res.status(201).json(rows[0]);
 }));
 
-app.put('/api/exams/:id', auth, wrap(async (req, res) => {
-  const { title, description, duration, passingScore, questions } = req.body;
+app.put('/api/exams/:id', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
+  const { title, description, duration, passingScore, questions, startDate = null, endDate = null } = req.body;
   const { rows } = await pool.query(
     `UPDATE exams
-     SET title=$1, description=$2, duration=$3, passing_score=$4, questions=$5
-     WHERE id=$6
+     SET title=$1, description=$2, duration=$3, passing_score=$4, questions=$5, start_date=$6, end_date=$7
+     WHERE id=$8
      RETURNING ${EXAM_COLS}`,
-    [title, description, duration, passingScore, JSON.stringify(questions), req.params.id]
+    [title, description, duration, passingScore, JSON.stringify(questions), startDate, endDate, req.params.id]
   );
   if (!rows.length) return res.status(404).json({ error: 'Exam not found' });
   res.json(rows[0]);
 }));
 
-app.delete('/api/exams/:id', auth, wrap(async (req, res) => {
+app.delete('/api/exams/:id', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
   const { rowCount } = await pool.query('DELETE FROM exams WHERE id=$1', [req.params.id]);
   if (!rowCount) return res.status(404).json({ error: 'Exam not found' });
   res.json({ success: true });
 }));
 
-app.patch('/api/exams/:id/status', auth, wrap(async (req, res) => {
+app.patch('/api/exams/:id/status', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
   const { status } = req.body;
   if (!EXAM_STATUSES.includes(status))
     return res.status(400).json({ error: `Invalid status: ${status}` });
@@ -182,7 +225,7 @@ app.patch('/api/exams/:id/status', auth, wrap(async (req, res) => {
 
 // ── Attempts ──────────────────────────────────────────────────────────────────
 
-app.post('/api/attempts', auth, wrap(async (req, res) => {
+app.post('/api/attempts', auth, requireRole('student'), wrap(async (req, res) => {
   const { examId, studentId, answers, startedAt } = req.body;
 
   const { rows: exRows } = await pool.query(
@@ -254,7 +297,7 @@ app.get('/api/questions/teacher/:teacherId', auth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post('/api/questions', auth, wrap(async (req, res) => {
+app.post('/api/questions', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
   const { text, type = 'multiple-choice', options, correctOption, keywords, topic = '', createdBy } = req.body;
   const id = `qb_${Date.now()}`;
   const { rows } = await pool.query(
@@ -270,7 +313,24 @@ app.post('/api/questions', auth, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
-app.delete('/api/questions/:id', auth, wrap(async (req, res) => {
+app.put('/api/questions/:id', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
+  const { text, type, options, correctOption, keywords, topic } = req.body;
+  const { rows } = await pool.query(
+    `UPDATE question_bank
+     SET text=$1, type=$2, options=$3, correct_option=$4, keywords=$5, topic=$6
+     WHERE id=$7
+     RETURNING ${QB_COLS}`,
+    [text, type,
+     options ? JSON.stringify(options) : null,
+     correctOption ?? null,
+     keywords ? JSON.stringify(keywords) : null,
+     topic ?? '', req.params.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Question not found' });
+  res.json(rows[0]);
+}));
+
+app.delete('/api/questions/:id', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
   const { rowCount } = await pool.query('DELETE FROM question_bank WHERE id=$1', [req.params.id]);
   if (!rowCount) return res.status(404).json({ error: 'Question not found' });
   res.json({ success: true });
@@ -285,8 +345,8 @@ app.post('/api/db/reset', auth, wrap(async (_req, res) => {
     await client.query('TRUNCATE attempts, exams, question_bank, users RESTART IDENTITY CASCADE');
     for (const u of SEED_USERS)
       await client.query(
-        'INSERT INTO users (id, username, password, role, name) VALUES ($1,$2,$3,$4,$5)',
-        [u.id, u.username, u.password, u.role, u.name]
+        'INSERT INTO users (id, username, password, role, name, status) VALUES ($1,$2,$3,$4,$5,$6)',
+        [u.id, u.username, u.password, u.role, u.name, u.status ?? 'active']
       );
     for (const e of SEED_EXAMS)
       await client.query(
@@ -329,7 +389,6 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Create question_bank table if it was added after the initial DB setup
 async function migrate() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS question_bank (
@@ -348,7 +407,12 @@ async function migrate() {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_question_bank_created_by ON question_bank(created_by)
   `);
-  console.log('Migration complete (question_bank table ensured)');
+  // Exam scheduling columns (idempotent)
+  await pool.query(`ALTER TABLE exams ADD COLUMN IF NOT EXISTS start_date TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE exams ADD COLUMN IF NOT EXISTS end_date   TIMESTAMPTZ`);
+  // User status for teacher approval (idempotent)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`);
+  console.log('Migration complete');
 }
 
 app.listen(PORT, async () => {

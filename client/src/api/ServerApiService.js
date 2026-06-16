@@ -118,9 +118,28 @@ class ServerApiService {
     return req('POST', '/questions', data);
   }
 
+  updateQuestion(id, data) {
+    Logger.info('ServerApiService.updateQuestion', { id });
+    return req('PUT', `/questions/${id}`, data);
+  }
+
   deleteQuestion(id) {
     Logger.info('ServerApiService.deleteQuestion', { id });
     return req('DELETE', `/questions/${id}`);
+  }
+
+  // ── Admin ──────────────────────────────────────────────────────────────────
+
+  getPendingTeachers() {
+    return req('GET', '/admin/teachers/pending');
+  }
+
+  approveTeacher(id) {
+    return req('PATCH', `/admin/teachers/${id}/approve`);
+  }
+
+  rejectTeacher(id) {
+    return req('PATCH', `/admin/teachers/${id}/reject`);
   }
 
   // ── Utility ────────────────────────────────────────────────────────────────

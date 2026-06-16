@@ -1,0 +1,24 @@
+{
+  "name": "fullstack_react",
+  "version": "1.0.0",
+  "description": "React Fullstack App for Exams application.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hkuser18/FullStack_React.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Hkuser18/FullStack_React/issues"
+  },
+  "homepage": "https://github.com/Hkuser18/FullStack_React#readme",
+  "dependencies": {
+    "playwright": "^1.61.0"
+  }
+}
