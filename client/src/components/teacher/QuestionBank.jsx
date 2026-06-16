@@ -20,6 +20,7 @@ const QuestionBank = ({ user }) => {
   const [showForm,  setShowForm]  = useState(false);
   const [form,      setForm]      = useState(EMPTY_FORM);
   const [saving,    setSaving]    = useState(false);
+  const [editId,    setEditId]    = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -37,7 +38,21 @@ const QuestionBank = ({ user }) => {
   const setOption = (idx, value) =>
     setForm(f => ({ ...f, options: f.options.map((o, i) => i === idx ? value : o) }));
 
-  const resetForm = () => { setForm(EMPTY_FORM); setShowForm(false); };
+  const resetForm = () => { setForm(EMPTY_FORM); setShowForm(false); setEditId(null); };
+
+  const handleEdit = (q) => {
+    setForm({
+      text: q.text,
+      type: q.type,
+      options: q.options || ['', '', '', ''],
+      correctOption: q.correctOption || 0,
+      keywords: q.keywords ? q.keywords.join(', ') : '',
+      topic: q.topic || ''
+    });
+    setEditId(q.id);
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const validate = () => {
     if (!form.text.trim()) { Notify.warning('Question text is required.'); return false; }
@@ -62,18 +77,33 @@ const QuestionBank = ({ user }) => {
         ? { options: form.options, correctOption: form.correctOption }
         : { keywords: form.keywords.split(',').map(k => k.trim()).filter(Boolean) }),
     };
-    Api.addQuestion(data)
-      .then(q => {
-        setQuestions(prev => [q, ...prev]);
-        Notify.success('Question added to bank!');
-        Logger.info('QuestionBank: added', { id: q.id });
-        resetForm();
-        setSaving(false);
-      })
-      .catch(err => {
-        Notify.error(err.message);
-        setSaving(false);
-      });
+    if (editId) {
+      Api.updateQuestion(editId, data)
+        .then(updatedQ => {
+          setQuestions(prev => prev.map(q => q.id === editId ? updatedQ : q));
+          Notify.success('Question updated!');
+          Logger.info('QuestionBank: updated', { id: editId });
+          resetForm();
+          setSaving(false);
+        })
+        .catch(err => {
+          Notify.error(err.message);
+          setSaving(false);
+        });
+    } else {
+      Api.addQuestion(data)
+        .then(q => {
+          setQuestions(prev => [q, ...prev]);
+          Notify.success('Question added to bank!');
+          Logger.info('QuestionBank: added', { id: q.id });
+          resetForm();
+          setSaving(false);
+        })
+        .catch(err => {
+          Notify.error(err.message);
+          setSaving(false);
+        });
+    }
   };
 
   const handleDelete = (id) => {
@@ -92,7 +122,10 @@ const QuestionBank = ({ user }) => {
     <div style={{ maxWidth: 780, margin: '0 auto' }}>
       <div className="d-flex align-items-center justify-content-between mb-4">
         <h4 className="mb-0">🗂️ Question Bank</h4>
-        <button className="btn btn-primary" onClick={() => setShowForm(s => !s)}>
+        <button className="btn btn-primary" onClick={() => {
+          if (showForm) resetForm();
+          else setShowForm(true);
+        }}>
           {showForm ? '✕ Cancel' : '+ Add Question'}
         </button>
       </div>
@@ -100,7 +133,9 @@ const QuestionBank = ({ user }) => {
       {/* Add form */}
       {showForm && (
         <div className="card mb-4 shadow-sm border-primary">
-          <div className="card-header bg-primary text-white fw-semibold">New Bank Question</div>
+          <div className="card-header bg-primary text-white fw-semibold">
+            {editId ? 'Edit Bank Question' : 'New Bank Question'}
+          </div>
           <div className="card-body d-flex flex-column gap-3">
 
             <div>
@@ -159,7 +194,7 @@ const QuestionBank = ({ user }) => {
 
             <div className="d-flex gap-2">
               <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving…' : 'Save Question'}
+                {saving ? 'Saving…' : editId ? 'Save Changes' : 'Save Question'}
               </button>
               <button className="btn btn-outline-secondary" onClick={resetForm}>Cancel</button>
             </div>
@@ -202,9 +237,14 @@ const QuestionBank = ({ user }) => {
                       <p className="mb-0 small text-muted">Keywords: {q.keywords.join(', ')}</p>
                     )}
                   </div>
-                  <button className="btn btn-outline-danger btn-sm flex-shrink-0" onClick={() => handleDelete(q.id)}>
-                    Delete
-                  </button>
+                  <div className="d-flex gap-2 flex-shrink-0">
+                    <button className="btn btn-outline-primary btn-sm" onClick={() => handleEdit(q)}>
+                      Edit
+                    </button>
+                    <button className="btn btn-outline-danger btn-sm" onClick={() => handleDelete(q.id)}>
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

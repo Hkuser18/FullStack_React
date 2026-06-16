@@ -189,6 +189,16 @@ class MockApiService {
     );
   }
 
+  updateQuestion(id, data) {
+    return this._async(() => {
+      const idx = this._questions.findIndex(q => q.id === id);
+      if (idx === -1) throw new Error('Question not found');
+      this._questions[idx] = { ...this._questions[idx], ...data };
+      Storage.set('db_questions', this._questions);
+      return structuredClone(this._questions[idx]);
+    });
+  }
+
   addQuestion(data) {
     return this._async(() => {
       const q = {

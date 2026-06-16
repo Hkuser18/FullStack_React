@@ -104,6 +104,11 @@ class ServerApiService {
     return req('GET', `/questions/teacher/${teacherId}`);
   }
 
+  updateQuestion(id, data) {
+    Logger.info('ServerApiService.updateQuestion', { id });
+    return req('PUT', `/questions/${id}`, data);
+  }
+
   addQuestion(data) {
     Logger.info('ServerApiService.addQuestion', { type: data.type });
     return req('POST', '/questions', data);
