@@ -3,6 +3,7 @@
 import Logger from '../services/LoggerService';
 
 const TOKEN_KEY = 'auth_token';
+const API_BASE  = import.meta.env.VITE_API_URL ?? '';
 
 export const saveToken  = token => localStorage.setItem(TOKEN_KEY, token);
 export const clearToken = ()    => localStorage.removeItem(TOKEN_KEY);
@@ -14,7 +15,7 @@ async function req(method, path, body) {
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const opts = { method, headers };
   if (body !== undefined) opts.body = JSON.stringify(body);
-  const res = await fetch(`/api${path}`, opts);
+  const res = await fetch(`${API_BASE}/api${path}`, opts);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? res.statusText);
