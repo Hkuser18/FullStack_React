@@ -8,9 +8,6 @@ const EMPTY_FORM = {
   text: '', type: 'multiple-choice',
   options: ['', '', '', ''], correctOption: 0,
   keywords: '', topic: '',
-  text: '', type: 'multiple-choice',
-  options: ['', '', '', ''], correctOption: 0,
-  keywords: '', topic: '',
 };
 
 const formFromQuestion = (q) => ({
@@ -167,6 +164,28 @@ const QuestionBank = ({ user }) => {
       .catch(err => { Notify.error(err.message); setSaving(false); });
   };
 
+  const handleImport = (importedQuestions) => {
+    Promise.all(importedQuestions.map(q => {
+      const data = {
+        text: q.text,
+        type: q.type,
+        topic: q.topic,
+        createdBy: user.id,
+        ...(q.type === 'multiple-choice'
+          ? { options: q.options, correctOption: q.correctOption }
+          : { keywords: q.keywords }),
+      };
+      return Api.addQuestion(data);
+    }))
+    .then(addedQs => {
+      setQuestions(prev => [...addedQs, ...prev]);
+    })
+    .catch(err => {
+      Notify.error('Some questions failed to import.');
+      Logger.error('QuestionBank.import', err.message);
+    });
+  };
+
   const handleDelete = (id) => {
     Api.deleteQuestion(id)
       .then(() => {
@@ -180,9 +199,12 @@ const QuestionBank = ({ user }) => {
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
       <div className="d-flex align-items-center justify-content-between mb-4">
         <h4 className="mb-0">🗂️ Question Bank</h4>
-        <button className="btn btn-primary" onClick={() => { setShowAdd(s => !s); setEditingId(null); }}>
-          {showAdd ? '✕ Cancel' : '+ Add Question'}
-        </button>
+        <div className="d-flex gap-2">
+          <QuestionImportExport onImport={handleImport} questionsToExport={questions} />
+          <button className="btn btn-primary" onClick={() => { setShowAdd(s => !s); setEditingId(null); }}>
+            {showAdd ? '✕ Cancel' : '+ Add Question'}
+          </button>
+        </div>
       </div>
 
       {showAdd && (
