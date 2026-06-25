@@ -1,0 +1,115 @@
+E-TEST SYSTEM - PROJECT DESCRIPTION
+=====================================
+React SPA (Single Page Application) - No Server, Mock Data Only
+Course: Full Stack 2026 | Tel Hai College
+
+
+OVERVIEW
+--------
+A web-based exam management system built entirely on the client side.
+Teachers create and manage exams. Students take exams and see their results.
+All data is stored in the browser's localStorage via a mock API service.
+
+
+USERS
+-----
+1. TEACHER
+   - Registers and logs in with role "teacher"
+   - Creates and manages multiple exams
+   - Controls exam lifecycle (draft -> published -> closed)
+   - Views student submission results and statistics
+
+2. STUDENT
+   - Registers and logs in with role "student"
+   - Browses and takes published exams
+   - Gets auto-scored immediately after submission
+   - Reviews correct answers and views past results
+
+Default demo accounts (password: pass123):
+  teacher1, teacher2 (teachers)
+  student1, student2 (students)
+
+
+PAGES
+-----
+AUTH PAGES (no login required):
+  - Login Page: role selector (teacher/student), username + password
+  - Register Page: create account, password validation, no duplicate usernames
+
+TEACHER PAGES (teacher login required):
+  - My Exams: list of teacher's own exams with status badges and action buttons
+  - Create Exam: form with general info (title, description, duration, passing score)
+                 and dynamic question builder (add/remove questions, 4 options each,
+                 radio button to mark correct answer). Saves as Draft.
+  - Edit Exam: same form pre-loaded with existing exam data
+  - Student Results: per-exam results table with avg score / pass rate stats
+
+STUDENT PAGES (student login required):
+  - Available Exams: list of all published exams, shows "Completed" if already taken
+  - Take Exam: countdown timer, answer all questions, submit button, auto-submit on timeout
+               answer review screen after submission (green = correct, red = wrong)
+  - My Results: history of all submitted exams with scores and pass/fail status
+
+
+FEATURES
+--------
+- Role-based access: teachers and students see completely different menus and pages
+- Exam lifecycle management: Draft -> Published -> Closed (teachers control this)
+- One attempt per student per exam: cannot retake a submitted exam
+- Auto-scoring: score calculated server-side (MockApiService) from answers vs correctOption
+- Countdown timer: turns red in last 60 seconds, auto-submits when time expires
+- Toast notifications: success/error/warning messages for all user actions
+- Data persistence: all data survives page refresh via localStorage
+- Modular OOP services: Config, Logger, Storage, Notify (all singletons)
+
+
+USE CASES
+---------
+UC1: Teacher creates a new exam
+  Steps: Login -> My Exams -> Create New Exam -> fill form -> add questions
+         -> mark correct answers -> Create Exam -> status is Draft
+  Outcome: New exam appears in My Exams list with Draft badge
+
+UC2: Teacher publishes an exam
+  Steps: My Exams -> find Draft exam -> click Publish
+  Outcome: Status changes to Published, students can now see and take it
+
+UC3: Teacher closes an exam after deadline
+  Steps: My Exams -> find Published exam -> click Close Exam
+  Outcome: Status changes to Closed, students can no longer take it
+
+UC4: Teacher views student results
+  Steps: My Exams -> click Results(n) on any exam -> see results table
+  Outcome: Table shows each student's name, score, pass/fail, submission time
+           Plus summary: total submissions, avg score, pass rate
+
+UC5: Student takes an exam
+  Steps: Login as student -> Available Exams -> Take Exam -> answer questions
+         -> Submit -> view score and answer review
+  Outcome: Score saved, exam marked as Completed, cannot retake
+
+UC6: Student views all results
+  Steps: My Results (sidebar)
+  Outcome: Table of all past exams sorted by most recent, with summary stats
+
+UC7: New user registers
+  Steps: Login page -> Register here -> choose role -> fill details -> Create Account
+  Outcome: Account saved, redirected to login
+
+UC8: Teacher edits an exam before publishing
+  Steps: My Exams -> Edit on a Draft exam -> change questions -> Save Changes
+  Outcome: Exam updated (only Draft exams can be edited)
+
+
+SERVICES (OOP Singletons)
+--------------------------
+ConfigService   - Central app configuration (api delay, exam defaults, storage prefix)
+LoggerService   - Leveled logging: DEBUG / INFO / WARN / ERROR with timestamp and history
+StorageService  - Namespaced localStorage CRUD with automatic JSON serialization
+NotifyService   - Pub/Sub toast notification system (Observer pattern)
+MockApiService  - In-memory database + async CRUD API for Users, Exams, Attempts
+
+
+TECH STACK
+----------
+React 19 + Vite 8 + TypeScript (tsconfig) + Bootstrap 5 + localStorage

@@ -1,0 +1,33 @@
+services:
+  # ── Backend Web Service ────────────────────────────────────────────────────
+  - type: web
+    name: examsapp-server
+    env: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: examsapp-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CLIENT_ORIGIN
+        sync: false   # Set to your Static Site URL after deploy
+
+  # ── Frontend Static Site ────────────────────────────────────────────────────
+  - type: static
+    name: examsapp-client
+    rootDir: client
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false   # Set to your Web Service URL after deploy
+
+databases:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  - name: examsapp-db
+    databaseName: examsapp
+    user: examsapp
