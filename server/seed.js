@@ -1,9 +1,11 @@
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import bcrypt from 'bcryptjs';
 import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS } from './db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const BCRYPT_ROUNDS = 10;
 
 async function seed() {
   const client = await pool.connect();
@@ -18,7 +20,7 @@ async function seed() {
       await client.query(
         `INSERT INTO users (id, username, password, role, name)
          VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
-        [u.id, u.username, u.password, u.role, u.name]
+        [u.id, u.username, await bcrypt.hash(u.password, BCRYPT_ROUNDS), u.role, u.name]
       );
 
     console.log('🌱 Seeding exams...');

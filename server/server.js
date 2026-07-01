@@ -1,7 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS, SEED_QUESTION_BANK } from './db.js';
+
+const BCRYPT_ROUNDS = 10;
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret';
 
@@ -71,16 +74,18 @@ const ATTEMPT_COLS = `
 app.post('/api/auth/login', wrap(async (req, res) => {
   const { username, password, role } = req.body;
   const { rows } = await pool.query(
-    `SELECT id, username, role, name, status FROM users
-     WHERE username=$1 AND password=$2 AND role=$3`,
-    [username, password, role]
+    `SELECT id, username, password, role, name, status FROM users
+     WHERE username=$1 AND role=$2`,
+    [username, role]
   );
   if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
   const user = rows[0];
+  if (!(await bcrypt.compare(password, user.password)))
+    return res.status(401).json({ error: 'Invalid credentials' });
   if (user.status === 'pending')
     return res.status(403).json({ error: 'Your teacher account is awaiting admin approval.' });
   const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-  const { status: _s, ...publicUser } = user;
+  const { status: _s, password: _p, ...publicUser } = user;
   res.json({ ...publicUser, token });
 }));
 
@@ -88,13 +93,14 @@ app.post('/api/auth/register', wrap(async (req, res) => {
   const { username, password, name, role } = req.body;
   const dup = await pool.query('SELECT id FROM users WHERE username=$1', [username]);
   if (dup.rows.length) return res.status(409).json({ error: 'Username already taken' });
-  const id     = `u_${Date.now()}`;
-  const status = role === 'teacher' ? 'pending' : 'active';
+  const id           = `u_${Date.now()}`;
+  const status       = role === 'teacher' ? 'pending' : 'active';
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const { rows } = await pool.query(
     `INSERT INTO users (id, username, password, role, name, status)
      VALUES ($1,$2,$3,$4,$5,$6)
      RETURNING id, username, role, name`,
-    [id, username, password, role, name, status]
+    [id, username, passwordHash, role, name, status]
   );
   const msg = role === 'teacher'
     ? 'Teacher account created — awaiting admin approval before you can log in.'
@@ -346,7 +352,7 @@ app.post('/api/db/reset', auth, wrap(async (_req, res) => {
     for (const u of SEED_USERS)
       await client.query(
         'INSERT INTO users (id, username, password, role, name, status) VALUES ($1,$2,$3,$4,$5,$6)',
-        [u.id, u.username, u.password, u.role, u.name, u.status ?? 'active']
+        [u.id, u.username, await bcrypt.hash(u.password, BCRYPT_ROUNDS), u.role, u.name, u.status ?? 'active']
       );
     for (const e of SEED_EXAMS)
       await client.query(
