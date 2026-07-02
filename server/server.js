@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS, SEED_QUESTION_BANK } from './db.js';
@@ -13,8 +15,18 @@ const PORT = process.env.PORT || 3002;
 
 const EXAM_STATUSES = ['draft', 'published', 'closed'];
 
+app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json());
+
+// Throttles brute-force login/register attempts per IP
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, please try again later.' },
+});
 
 // Wraps async route handlers so thrown errors reach the error middleware
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next);
@@ -71,7 +83,7 @@ const ATTEMPT_COLS = `
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-app.post('/api/auth/login', wrap(async (req, res) => {
+app.post('/api/auth/login', authLimiter, wrap(async (req, res) => {
   const { username, password, role } = req.body;
   const { rows } = await pool.query(
     `SELECT id, username, password, role, name, status FROM users
@@ -89,7 +101,7 @@ app.post('/api/auth/login', wrap(async (req, res) => {
   res.json({ ...publicUser, token });
 }));
 
-app.post('/api/auth/register', wrap(async (req, res) => {
+app.post('/api/auth/register', authLimiter, wrap(async (req, res) => {
   const { username, password, name, role } = req.body;
   const dup = await pool.query('SELECT id FROM users WHERE username=$1', [username]);
   if (dup.rows.length) return res.status(409).json({ error: 'Username already taken' });
