@@ -15,7 +15,7 @@ services:
         generateValue: true
       - key: CLIENT_ORIGIN
         sync: false   # Set to your Static Site URL after deploy
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_API_KEY
         sync: false   # Optional — enables POST /api/questions/generate (AI-generated exam questions)
 
   # ── Frontend Static Site ────────────────────────────────────────────────────

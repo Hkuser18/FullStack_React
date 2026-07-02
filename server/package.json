@@ -10,7 +10,7 @@
     "demo": "node demo-db.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.109.1",
+    "@google/genai": "^2.10.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",

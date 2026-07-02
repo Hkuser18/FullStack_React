@@ -83,11 +83,11 @@ const studentToken = await login('student1', 'pass123', 'student');
 }
 console.log('✅ AI generation route rejects non-teacher roles');
 
-if (!process.env.ANTHROPIC_API_KEY) {
+if (!process.env.GEMINI_API_KEY) {
   const { status, data } = await generate(token, { topic: 'Physics', count: 3 });
-  assert.equal(status, 503, 'without ANTHROPIC_API_KEY, generation should return 503');
+  assert.equal(status, 503, 'without GEMINI_API_KEY, generation should return 503');
   assert.ok(data.error, 'expected an error message');
-  console.log('✅ AI generation reports 503 when ANTHROPIC_API_KEY is not configured');
+  console.log('✅ AI generation reports 503 when GEMINI_API_KEY is not configured');
 }
 
 console.log('\n✅ API smoke test passed');
