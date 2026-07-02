@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import Anthropic from '@anthropic-ai/sdk';
 import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS, SEED_QUESTION_BANK } from './db.js';
 
 const BCRYPT_ROUNDS = 10;
@@ -26,6 +27,15 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many attempts, please try again later.' },
+});
+
+// AI question generation calls a paid external API — throttle harder than normal routes
+const aiGenerationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many AI generation requests, please try again later.' },
 });
 
 // Wraps async route handlers so thrown errors reach the error middleware
@@ -371,6 +381,117 @@ app.delete('/api/questions/:id', auth, requireRole('teacher', 'admin'), wrap(asy
   const { rowCount } = await pool.query('DELETE FROM question_bank WHERE id=$1', [req.params.id]);
   if (!rowCount) return res.status(404).json({ error: 'Question not found' });
   res.json({ success: true });
+}));
+
+// ── AI Question Generation ──────────────────────────────────────────────────────
+// Structured-outputs schema: MC-only fields (options/correctOption) and
+// open-only fields (keywords) are both present but nullable, since JSON Schema
+// structured outputs don't support conditional/discriminated-union requiredness.
+const QUESTION_GEN_SCHEMA = {
+  type: 'object',
+  properties: {
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          type:          { type: 'string', enum: ['multiple-choice', 'open'] },
+          text:          { type: 'string' },
+          topic:         { type: 'string' },
+          options:       { anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }] },
+          correctOption: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
+          keywords:      { anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }] },
+        },
+        required: ['type', 'text', 'topic', 'options', 'correctOption', 'keywords'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['questions'],
+  additionalProperties: false,
+};
+
+// The model's output feeds directly into auto-grading (correctOption / keywords),
+// so nothing from it is trusted without validation — malformed items are dropped
+// rather than saved as a broken exam question.
+function sanitizeGeneratedQuestion(q, fallbackTopic) {
+  if (!q || typeof q.text !== 'string' || !q.text.trim()) return null;
+  const topic = (typeof q.topic === 'string' && q.topic.trim()) || fallbackTopic;
+
+  if (q.type === 'open') {
+    const keywords = Array.isArray(q.keywords)
+      ? q.keywords.filter(k => typeof k === 'string' && k.trim())
+      : [];
+    if (!keywords.length) return null;
+    return { type: 'open', text: q.text.trim(), topic, keywords };
+  }
+
+  const options = Array.isArray(q.options)
+    ? q.options.filter(o => typeof o === 'string' && o.trim())
+    : [];
+  if (options.length < 2) return null;
+  if (!Number.isInteger(q.correctOption) || q.correctOption < 0 || q.correctOption >= options.length) return null;
+  return { type: 'multiple-choice', text: q.text.trim(), topic, options, correctOption: q.correctOption };
+}
+
+async function generateQuestionsWithAI(topic, count, type) {
+  const anthropic = new Anthropic();
+  const typeInstruction = type === 'mixed'
+    ? 'a mix of "multiple-choice" and "open" questions'
+    : `only "${type}" questions`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-opus-4-8',
+    max_tokens: 4096,
+    thinking: { type: 'adaptive' },
+    output_config: {
+      effort: 'medium',
+      format: { type: 'json_schema', schema: QUESTION_GEN_SCHEMA },
+    },
+    messages: [{
+      role: 'user',
+      content: `Generate ${count} exam question(s) about "${topic}" for a university-level course. Use ${typeInstruction}.
+
+For "multiple-choice" questions: provide exactly 4 plausible options in "options" and the 0-based index of the correct one in "correctOption"; leave "keywords" null.
+For "open" questions: provide 3-6 short lowercase "keywords" that a correct free-text answer should contain; leave "options" and "correctOption" null.
+
+Each question's "topic" field should be a short label (e.g. "${topic}"). Questions must be factually correct, unambiguous, and have exactly one defensible correct answer.`,
+    }],
+  });
+
+  if (response.stop_reason === 'refusal') {
+    throw new Error('The AI declined to generate questions for this topic.');
+  }
+
+  const textBlock = response.content.find(b => b.type === 'text');
+  if (!textBlock) throw new Error('AI response contained no content.');
+
+  const parsed = JSON.parse(textBlock.text);
+  return Array.isArray(parsed.questions) ? parsed.questions : [];
+}
+
+app.post('/api/questions/generate', auth, requireRole('teacher', 'admin'), aiGenerationLimiter, wrap(async (req, res) => {
+  const { topic, count = 5, type = 'mixed' } = req.body;
+  if (typeof topic !== 'string' || !topic.trim())
+    return res.status(400).json({ error: 'topic is required' });
+  const n = Number(count);
+  if (!Number.isInteger(n) || n < 1 || n > 10)
+    return res.status(400).json({ error: 'count must be an integer between 1 and 10' });
+  if (!['multiple-choice', 'open', 'mixed'].includes(type))
+    return res.status(400).json({ error: 'type must be multiple-choice, open, or mixed' });
+  if (!process.env.ANTHROPIC_API_KEY)
+    return res.status(503).json({ error: 'AI question generation is not configured on this server' });
+
+  const raw = await generateQuestionsWithAI(topic.trim(), n, type);
+  const sanitized = raw
+    .map(q => sanitizeGeneratedQuestion(q, topic.trim()))
+    .filter(Boolean)
+    .map((q, i) => ({ ...q, id: `ai_${Date.now()}_${i}` }));
+
+  if (!sanitized.length)
+    return res.status(502).json({ error: 'The AI did not return any valid questions — try again or rephrase the topic.' });
+
+  res.json({ questions: sanitized });
 }));
 
 // ── Utility ───────────────────────────────────────────────────────────────────

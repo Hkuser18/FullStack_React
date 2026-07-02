@@ -3,6 +3,7 @@ import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 import QuestionImportExport from '../shared/QuestionImportExport';
+import AIQuestionGenerator from './AIQuestionGenerator';
 
 const EMPTY_FORM = {
   text: '', type: 'multiple-choice',
@@ -103,6 +104,7 @@ const QuestionBank = ({ user }) => {
   const [questions,  setQuestions]  = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [showAdd,    setShowAdd]    = useState(false);
+  const [showAI,     setShowAI]     = useState(false);
   const [addForm,    setAddForm]    = useState(EMPTY_FORM);
   const [editingId,  setEditingId]  = useState(null);
   const [editForm,   setEditForm]   = useState(EMPTY_FORM);
@@ -201,11 +203,22 @@ const QuestionBank = ({ user }) => {
         <h4 className="mb-0">🗂️ Question Bank</h4>
         <div className="d-flex gap-2">
           <QuestionImportExport onImport={handleImport} questionsToExport={questions} />
-          <button className="btn btn-primary" onClick={() => { setShowAdd(s => !s); setEditingId(null); }}>
+          <button className="btn btn-outline-primary" onClick={() => { setShowAI(s => !s); setShowAdd(false); setEditingId(null); }}>
+            {showAI ? '✕ Cancel' : '✨ Generate with AI'}
+          </button>
+          <button className="btn btn-primary" onClick={() => { setShowAdd(s => !s); setShowAI(false); setEditingId(null); }}>
             {showAdd ? '✕ Cancel' : '+ Add Question'}
           </button>
         </div>
       </div>
+
+      {showAI && (
+        <AIQuestionGenerator
+          user={user}
+          onAdd={(addedQs) => setQuestions(prev => [...addedQs, ...prev])}
+          onClose={() => setShowAI(false)}
+        />
+      )}
 
       {showAdd && (
         <QuestionForm

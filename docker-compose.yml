@@ -25,6 +25,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change_me_in_production}
       CLIENT_ORIGIN: http://localhost:8080
       PORT: 3002
+      # Optional — enables POST /api/questions/generate. Pass through from the host shell
+      # (export ANTHROPIC_API_KEY=... before `docker compose up`) to use it here.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
