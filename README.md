@@ -12,6 +12,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for diagrams (ER diagram, use
 - **Student** — browse published exams, take an exam under a countdown timer, auto-graded submission (exact match for multiple-choice, keyword match for open-ended), view score history and answer review
 - **Dual API layer** — the client can run against a real Express/PostgreSQL backend or a localStorage-backed mock, toggled by an env var (useful for frontend-only development)
 - **CSV question import/export** — bulk-load or export question bank entries; see [`docs/QUESTION_IMPORT_FORMAT.md`](docs/QUESTION_IMPORT_FORMAT.md)
+- **AI-generated questions** — teachers can generate multiple-choice/open questions from a topic prompt (Gemini API), review a preview, and add selected ones to the question bank. Optional — set `GEMINI_API_KEY` to enable; the rest of the app works without it
 
 ## Tech Stack
 
@@ -20,6 +21,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for diagrams (ER diagram, use
 | Client | React 19 + Vite, Bootstrap 5, Vitest + Testing Library |
 | Server | Express (ESM), JWT (`jsonwebtoken`), `bcryptjs`, `cors` |
 | Database | PostgreSQL (`pg`) |
+| AI | Google Gemini API (`@google/genai`) — optional, free-tier key |
 | CI | GitHub Actions |
 | Containerization | Docker + Docker Compose |
 | Deployment | Render (web service + static site + managed Postgres) |

@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS, SEED_QUESTION_BANK } from './db.js';
 
 const BCRYPT_ROUNDS = 10;
@@ -398,17 +398,15 @@ const QUESTION_GEN_SCHEMA = {
           type:          { type: 'string', enum: ['multiple-choice', 'open'] },
           text:          { type: 'string' },
           topic:         { type: 'string' },
-          options:       { anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }] },
-          correctOption: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
-          keywords:      { anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }] },
+          options:       { type: ['array', 'null'], items: { type: 'string' } },
+          correctOption: { type: ['integer', 'null'] },
+          keywords:      { type: ['array', 'null'], items: { type: 'string' } },
         },
         required: ['type', 'text', 'topic', 'options', 'correctOption', 'keywords'],
-        additionalProperties: false,
       },
     },
   },
   required: ['questions'],
-  additionalProperties: false,
 };
 
 // The model's output feeds directly into auto-grading (correctOption / keywords),
@@ -434,39 +432,32 @@ function sanitizeGeneratedQuestion(q, fallbackTopic) {
   return { type: 'multiple-choice', text: q.text.trim(), topic, options, correctOption: q.correctOption };
 }
 
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+
 async function generateQuestionsWithAI(topic, count, type) {
-  const anthropic = new Anthropic();
+  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const typeInstruction = type === 'mixed'
     ? 'a mix of "multiple-choice" and "open" questions'
     : `only "${type}" questions`;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-opus-4-8',
-    max_tokens: 4096,
-    thinking: { type: 'adaptive' },
-    output_config: {
-      effort: 'medium',
-      format: { type: 'json_schema', schema: QUESTION_GEN_SCHEMA },
-    },
-    messages: [{
-      role: 'user',
-      content: `Generate ${count} exam question(s) about "${topic}" for a university-level course. Use ${typeInstruction}.
+  const interaction = await genAI.interactions.create({
+    model: GEMINI_MODEL,
+    input: `Generate ${count} exam question(s) about "${topic}" for a university-level course. Use ${typeInstruction}.
 
 For "multiple-choice" questions: provide exactly 4 plausible options in "options" and the 0-based index of the correct one in "correctOption"; leave "keywords" null.
 For "open" questions: provide 3-6 short lowercase "keywords" that a correct free-text answer should contain; leave "options" and "correctOption" null.
 
 Each question's "topic" field should be a short label (e.g. "${topic}"). Questions must be factually correct, unambiguous, and have exactly one defensible correct answer.`,
-    }],
+    response_format: {
+      type: 'text',
+      mime_type: 'application/json',
+      schema: QUESTION_GEN_SCHEMA,
+    },
   });
 
-  if (response.stop_reason === 'refusal') {
-    throw new Error('The AI declined to generate questions for this topic.');
-  }
+  if (!interaction.output_text) throw new Error('AI response contained no content.');
 
-  const textBlock = response.content.find(b => b.type === 'text');
-  if (!textBlock) throw new Error('AI response contained no content.');
-
-  const parsed = JSON.parse(textBlock.text);
+  const parsed = JSON.parse(interaction.output_text);
   return Array.isArray(parsed.questions) ? parsed.questions : [];
 }
 
@@ -479,7 +470,7 @@ app.post('/api/questions/generate', auth, requireRole('teacher', 'admin'), aiGen
     return res.status(400).json({ error: 'count must be an integer between 1 and 10' });
   if (!['multiple-choice', 'open', 'mixed'].includes(type))
     return res.status(400).json({ error: 'type must be multiple-choice, open, or mixed' });
-  if (!process.env.ANTHROPIC_API_KEY)
+  if (!process.env.GEMINI_API_KEY)
     return res.status(503).json({ error: 'AI question generation is not configured on this server' });
 
   let raw;
