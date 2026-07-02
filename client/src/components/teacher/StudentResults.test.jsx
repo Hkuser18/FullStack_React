@@ -7,9 +7,10 @@ vi.mock('../../api', () => ({
     getExamsByTeacher: vi.fn(),
     getAttemptsByExam: vi.fn(),
     getUsers: vi.fn(),
+    gradeAttempt: vi.fn(),
   },
 }));
-vi.mock('../../services/NotifyService', () => ({ default: { error: vi.fn() } }));
+vi.mock('../../services/NotifyService', () => ({ default: { error: vi.fn(), success: vi.fn() } }));
 vi.mock('../../services/LoggerService', () => ({ default: { error: vi.fn() } }));
 
 const user = { id: 1, name: 'Prof. Smith', role: 'teacher' };
@@ -93,5 +94,41 @@ describe('StudentResults', () => {
     await waitFor(() =>
       expect(screen.getByText(/no submissions yet/i)).toBeInTheDocument()
     );
+  });
+
+  test('shows "No feedback yet" when an attempt has no feedback', async () => {
+    render(<StudentResults user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Alice'));
+    expect(screen.getByText(/no feedback yet/i)).toBeInTheDocument();
+  });
+
+  test('clicking Grade opens score/feedback inputs pre-filled with current values', async () => {
+    render(<StudentResults user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Alice'));
+    fireEvent.click(screen.getByRole('button', { name: /grade/i }));
+    expect(screen.getByDisplayValue('75')).toBeInTheDocument();
+  });
+
+  test('saving a grade calls Api.gradeAttempt and updates the row', async () => {
+    Api.gradeAttempt.mockResolvedValue({ ...attempt, score: 90, passed: true, feedback: 'Great work!' });
+    render(<StudentResults user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Alice'));
+    fireEvent.click(screen.getByRole('button', { name: /grade/i }));
+    fireEvent.change(screen.getByDisplayValue('75'), { target: { value: '90' } });
+    fireEvent.change(screen.getByPlaceholderText(/feedback for the student/i), { target: { value: 'Great work!' } });
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(Api.gradeAttempt).toHaveBeenCalledWith('a1', { score: 90, feedback: 'Great work!' }));
+    await waitFor(() => expect(screen.getByText('Great work!')).toBeInTheDocument());
+  });
+
+  test('cancelling an edit discards changes', async () => {
+    render(<StudentResults user={user} onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Alice'));
+    fireEvent.click(screen.getByRole('button', { name: /grade/i }));
+    fireEvent.change(screen.getByDisplayValue('75'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.getByRole('button', { name: /grade/i })).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('10')).not.toBeInTheDocument();
+    expect(Api.gradeAttempt).not.toHaveBeenCalled();
   });
 });

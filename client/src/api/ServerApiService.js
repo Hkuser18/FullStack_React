@@ -104,6 +104,11 @@ class ServerApiService {
     return attempted;
   }
 
+  gradeAttempt(id, data) {
+    Logger.info('ServerApiService.gradeAttempt', { id });
+    return req('PATCH', `/attempts/${id}`, data);
+  }
+
   // ── Question Bank ──────────────────────────────────────────────────────────
 
   getQuestions() {
