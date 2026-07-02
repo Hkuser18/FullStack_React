@@ -482,7 +482,13 @@ app.post('/api/questions/generate', auth, requireRole('teacher', 'admin'), aiGen
   if (!process.env.ANTHROPIC_API_KEY)
     return res.status(503).json({ error: 'AI question generation is not configured on this server' });
 
-  const raw = await generateQuestionsWithAI(topic.trim(), n, type);
+  let raw;
+  try {
+    raw = await generateQuestionsWithAI(topic.trim(), n, type);
+  } catch (err) {
+    console.error('AI question generation failed:', err.message);
+    return res.status(502).json({ error: 'AI question generation is temporarily unavailable. Please try again later.' });
+  }
   const sanitized = raw
     .map(q => sanitizeGeneratedQuestion(q, topic.trim()))
     .filter(Boolean)
