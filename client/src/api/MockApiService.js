@@ -222,6 +222,22 @@ class MockApiService {
     });
   }
 
+  // Mock mode has no real model to call — fabricates plausible placeholder
+  // questions so the AI-generation UI is still exercisable without a server.
+  generateQuestions({ topic, count = 5, type = 'mixed' }) {
+    return this._async(() => {
+      if (!topic || !topic.trim()) throw new Error('topic is required');
+      return Array.from({ length: count }, (_, i) => {
+        const isOpen = type === 'open' || (type === 'mixed' && i % 2 === 1);
+        const id = `ai_${Date.now()}_${i}`;
+        return isOpen
+          ? { id, type: 'open', topic, text: `[Mock] Explain a key concept of ${topic} (question ${i + 1}).`, keywords: [topic.toLowerCase()] }
+          : { id, type: 'multiple-choice', topic, text: `[Mock] Which statement about ${topic} is correct? (question ${i + 1})`,
+              options: [`A correct fact about ${topic}`, 'An unrelated distractor', 'Another distractor', 'A third distractor'], correctOption: 0 };
+      });
+    });
+  }
+
   // ── Attempts ──────────────────────────────────────────────────────────────
 
   submitAttempt(attemptData) {

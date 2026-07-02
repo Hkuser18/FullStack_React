@@ -134,6 +134,12 @@ class ServerApiService {
     return req('DELETE', `/questions/${id}`);
   }
 
+  async generateQuestions({ topic, count, type }) {
+    Logger.info('ServerApiService.generateQuestions', { topic, count, type });
+    const { questions } = await req('POST', '/questions/generate', { topic, count, type });
+    return questions;
+  }
+
   // ── Admin ──────────────────────────────────────────────────────────────────
 
   getPendingTeachers() {
