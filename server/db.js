@@ -5,12 +5,16 @@ const { Pool } = pg;
 
 const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/exam_app';
 
+// Render (and most other hosted Postgres) requires SSL; local/Docker Compose Postgres doesn't
+// support it at all. DATABASE_SSL lets an environment (e.g. docker-compose.yml) override the
+// hostname-based guess explicitly instead of us trying to enumerate every "this is local" host.
+const useSSL = process.env.DATABASE_SSL
+  ? process.env.DATABASE_SSL === 'true'
+  : !connectionString.includes('localhost');
+
 const pool = new Pool({
   connectionString,
-  // Render (and any non-localhost host) requires SSL
-  ssl: connectionString.includes('localhost')
-    ? false
-    : { rejectUnauthorized: false },
+  ssl: useSSL ? { rejectUnauthorized: false } : false,
 });
 
 pool.query('SELECT NOW()', (err, res) => {
