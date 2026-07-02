@@ -1,2 +1,85 @@
-# FullStack_React
-React Fullstack App for Exams application.
+# ExamsApp
+
+A full-stack online exam management system built for the Tel-Hai College FullStack course. Teachers create and publish exams, students take them and get auto-graded results, and an admin approves new teacher accounts.
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for diagrams (ER diagram, use cases, component hierarchy, auth sequence).
+
+## Features
+
+- **Auth** — JWT login/register, bcrypt-hashed passwords, role-based access (admin / teacher / student)
+- **Admin** — approve or reject pending teacher registrations
+- **Teacher** — create/edit/delete exams, build a reusable question bank (multiple-choice + open-ended), publish/close/reopen exams, optional exam scheduling window, view student results with per-exam stats
+- **Student** — browse published exams, take an exam under a countdown timer, auto-graded submission (exact match for multiple-choice, keyword match for open-ended), view score history and answer review
+- **Dual API layer** — the client can run against a real Express/PostgreSQL backend or a localStorage-backed mock, toggled by an env var (useful for frontend-only development)
+- **CSV question import/export** — bulk-load or export question bank entries; see [`docs/QUESTION_IMPORT_FORMAT.md`](docs/QUESTION_IMPORT_FORMAT.md)
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Client | React 19 + Vite, Bootstrap 5, Vitest + Testing Library |
+| Server | Express (ESM), JWT (`jsonwebtoken`), `bcryptjs`, `cors` |
+| Database | PostgreSQL (`pg`) |
+| CI | GitHub Actions |
+| Deployment | Render (web service + static site + managed Postgres) |
+
+## Project Structure
+
+```
+client/   React app — see client/src for components, services, api layer
+server/   Express API — server.js (routes + migrations), db.js (pool + seed data)
+docs/     Architecture and database diagrams
+```
+
+## Getting Started
+
+### Prerequisites
+- Node.js 20+
+- A PostgreSQL instance (local, Docker, or a hosted DB)
+
+### 1. Server
+
+```bash
+cd server
+npm install
+cp .env.example .env   # set DATABASE_URL, JWT_SECRET, CLIENT_ORIGIN
+npm run dev             # starts on http://localhost:3002, auto-migrates schema on boot
+```
+
+The server auto-creates any missing columns on startup via `migrate()`. The base tables (`users`, `exams`, `attempts`, `question_bank`) are provisioned from `server/schema.sql` — run it once against a fresh database:
+
+```bash
+psql "$DATABASE_URL" -f server/schema.sql
+```
+
+Seed/reset demo data at any time with `POST /api/db/reset` (requires a valid auth token) or `npm run seed`.
+
+### 2. Client
+
+```bash
+cd client
+npm install
+cp .env.example .env    # set VITE_USE_SERVER=true and VITE_API_URL=http://localhost:3002
+npm run dev              # starts on http://localhost:5173
+```
+
+Set `VITE_USE_SERVER=false` to run the client entirely against an in-browser mock API (no backend/DB needed) — handy for isolated frontend work.
+
+### Demo Accounts
+Password `pass123` for all:
+
+| Username | Role |
+|---|---|
+| admin | admin |
+| teacher1, teacher2 | teacher |
+| student1, student2 | student |
+
+## Testing
+
+```bash
+cd client && npm test    # Vitest component/service tests
+```
+
+## Deployment
+
+`render.yaml` defines a Render Blueprint with three resources: the Express API, the static client build, and a managed PostgreSQL database. Push to the connected branch and Render provisions/updates all three; set `CLIENT_ORIGIN` (server) and `VITE_API_URL` (client) to each other's deployed URLs after the first deploy.

@@ -27,3 +27,58 @@ jobs:
       - name: Build
         working-directory: client
         run: npm run build
+
+  server-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: examsapp
+          POSTGRES_PASSWORD: examsapp
+          POSTGRES_DB: examsapp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U examsapp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://examsapp:examsapp@localhost:5432/examsapp
+      JWT_SECRET: ci_test_secret
+      PORT: 3002
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Seed database
+        working-directory: server
+        run: npm run seed
+
+      - name: Start server
+        working-directory: server
+        run: node server.js &
+
+      - name: Wait for server
+        run: |
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://localhost:3002/api/exams && exit 0
+            sleep 1
+          done
+          echo "server did not become ready in time" >&2
+          exit 1
+
+      - name: Run API smoke test
+        working-directory: server
+        run: npm run test:api
