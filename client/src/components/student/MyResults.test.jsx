@@ -57,4 +57,19 @@ describe('MyResults', () => {
     await waitFor(() => expect(screen.getByText('Exams Taken')).toBeInTheDocument());
     expect(screen.getByText('Avg Score')).toBeInTheDocument();
   });
+
+  test('shows teacher feedback when present on an attempt', async () => {
+    Api.getAttemptsByStudent.mockResolvedValue([{ ...attempts[0], feedback: 'Nice job!' }]);
+    Api.getExams.mockResolvedValue(exams);
+    render(<MyResults user={user} />);
+    await waitFor(() => expect(screen.getByText('Nice job!')).toBeInTheDocument());
+  });
+
+  test('shows a placeholder when an attempt has no feedback', async () => {
+    Api.getAttemptsByStudent.mockResolvedValue(attempts);
+    Api.getExams.mockResolvedValue(exams);
+    render(<MyResults user={user} />);
+    await waitFor(() => screen.getByText('Math Quiz'));
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
 });

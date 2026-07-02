@@ -272,6 +272,21 @@ class MockApiService {
       this._attempts.some(a => a.studentId === studentId && a.examId === examId)
     );
   }
+
+  gradeAttempt(id, { score, feedback }) {
+    return this._async(() => {
+      if (typeof score !== 'number' || score < 0 || score > 100)
+        throw new Error('score must be a number between 0 and 100');
+      const idx = this._attempts.findIndex(a => a.id === id);
+      if (idx === -1) throw new Error('Attempt not found');
+      const exam = this._exams.find(e => e.id === this._attempts[idx].examId);
+      const passed = score >= (exam?.passingScore ?? 60);
+      this._attempts[idx] = { ...this._attempts[idx], score, passed, feedback: feedback ?? null };
+      Storage.set('db_attempts', this._attempts);
+      Logger.info('MockApiService.gradeAttempt', { id, score, passed });
+      return structuredClone(this._attempts[idx]);
+    });
+  }
 }
 
 export default new MockApiService();

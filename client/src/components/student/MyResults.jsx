@@ -80,6 +80,7 @@ const MyResults = ({ user }) => {
                   <th>Exam</th>
                   <th>Score</th>
                   <th>Result</th>
+                  <th>Feedback</th>
                   <th>Submitted</th>
                 </tr>
               </thead>
@@ -92,6 +93,9 @@ const MyResults = ({ user }) => {
                       <span className={`badge bg-${a.passed ? 'success' : 'danger'}`}>
                         {a.passed ? 'Passed' : 'Failed'}
                       </span>
+                    </td>
+                    <td className="small text-muted" style={{ maxWidth: 260 }}>
+                      {a.feedback || '—'}
                     </td>
                     <td className="text-muted small">
                       {new Date(a.submittedAt).toLocaleString()}

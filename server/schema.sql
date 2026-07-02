@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS attempts (
   answers      JSONB       NOT NULL DEFAULT '[]',
   score        INT         NOT NULL,
   passed       BOOLEAN     NOT NULL,
+  feedback     TEXT,
   started_at   TIMESTAMPTZ NOT NULL,
   submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

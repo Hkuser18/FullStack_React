@@ -5,6 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
+import Storage from '../../services/StorageService';
 
 const fmt = (secs) =>
   `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
@@ -24,15 +25,34 @@ const TakeExam = ({ user, examId, onNavigate }) => {
   const [phase,      setPhase]      = useState('loading'); // loading | taking | result
   const [result,     setResult]     = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [startedAt,  setStartedAt]  = useState(null);
   const timerRef = useRef(null);
+
+  const autosaveKey = `autosave_${examId}_${user.id}`;
 
   // ── Load exam ─────────────────────────────────────────────────────────────
   useEffect(() => {
     Api.getExamById(examId)
       .then(data => {
         setExam(data);
-        setAnswers(new Array(data.questions.length).fill(null));
-        setTimeLeft(data.duration * 60);
+
+        const saved = Storage.get(autosaveKey);
+        const now = Date.now();
+        const remaining = saved
+          ? data.duration * 60 - Math.floor((now - saved.startedAt) / 1000)
+          : null;
+
+        if (saved && Array.isArray(saved.answers) && saved.answers.length === data.questions.length && remaining > 0) {
+          setAnswers(saved.answers);
+          setStartedAt(saved.startedAt);
+          setTimeLeft(remaining);
+          Notify.info('Restored your in-progress answers.');
+        } else {
+          if (saved) Storage.remove(autosaveKey); // stale/expired autosave
+          setAnswers(new Array(data.questions.length).fill(null));
+          setStartedAt(now);
+          setTimeLeft(data.duration * 60);
+        }
         setPhase('taking');
       })
       .catch(err => {
@@ -41,6 +61,12 @@ const TakeExam = ({ user, examId, onNavigate }) => {
         onNavigate('available-exams');
       });
   }, [examId]);
+
+  // ── Auto-save ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'taking' || !startedAt) return;
+    Storage.set(autosaveKey, { answers, startedAt });
+  }, [answers, phase, startedAt]);
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const submit = useCallback((auto = false) => {
@@ -53,8 +79,9 @@ const TakeExam = ({ user, examId, onNavigate }) => {
       return a ?? -1; // -1 = unanswered MC → always wrong
     });
 
-    Api.submitAttempt({ examId, studentId: user.id, answers: finalAnswers, startedAt: new Date().toISOString() })
+    Api.submitAttempt({ examId, studentId: user.id, answers: finalAnswers, startedAt: new Date(startedAt).toISOString() })
       .then(attempt => {
+        Storage.remove(autosaveKey);
         setResult(attempt);
         setPhase('result');
         setSubmitting(false);
@@ -67,7 +94,7 @@ const TakeExam = ({ user, examId, onNavigate }) => {
         Logger.error('TakeExam.submit', err.message);
         setSubmitting(false);
       });
-  }, [answers, exam, examId, user.id]);
+  }, [answers, exam, examId, user.id, startedAt, autosaveKey]);
 
   // ── Timer ─────────────────────────────────────────────────────────────────
   useEffect(() => {

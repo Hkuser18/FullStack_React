@@ -68,6 +68,10 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
   const [attempts,        setAttempts]        = useState([]);
   const [usersMap,        setUsersMap]        = useState({});
   const [loading,         setLoading]         = useState(false);
+  const [editingId,       setEditingId]       = useState(null);
+  const [editScore,       setEditScore]       = useState('');
+  const [editFeedback,    setEditFeedback]    = useState('');
+  const [saving,          setSaving]          = useState(false);
 
   useEffect(() => {
     Api.getExamsByTeacher(user.id).then(data => {
@@ -91,6 +95,35 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
         setLoading(false);
       });
   }, [selectedExamId]);
+
+  const startEdit = (a) => {
+    setEditingId(a.id);
+    setEditScore(String(a.score));
+    setEditFeedback(a.feedback ?? '');
+  };
+
+  const cancelEdit = () => setEditingId(null);
+
+  const saveEdit = (attemptId) => {
+    const score = Number(editScore);
+    if (Number.isNaN(score) || score < 0 || score > 100) {
+      Notify.error('Score must be a number between 0 and 100.');
+      return;
+    }
+    setSaving(true);
+    Api.gradeAttempt(attemptId, { score, feedback: editFeedback.trim() || null })
+      .then(updated => {
+        setAttempts(prev => prev.map(a => a.id === attemptId ? updated : a));
+        setEditingId(null);
+        setSaving(false);
+        Notify.success('Grade updated.');
+      })
+      .catch(err => {
+        Notify.error('Failed to update grade.');
+        Logger.error('StudentResults.saveEdit', err.message);
+        setSaving(false);
+      });
+  };
 
   const selectedExam = exams.find(e => e.id === selectedExamId);
   const avgScore  = attempts.length ? Math.round(attempts.reduce((s, a) => s + a.score, 0) / attempts.length) : 0;
@@ -160,23 +193,68 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
                   <th>Student</th>
                   <th>Score</th>
                   <th>Status</th>
+                  <th>Feedback</th>
                   <th>Submitted</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {attempts.map(a => (
-                  <tr key={a.id}>
-                    <td className="fw-semibold">{usersMap[a.studentId]?.name ?? a.studentId}</td>
-                    <td><strong>{a.score}%</strong></td>
-                    <td>
-                      <span className={`badge bg-${a.passed ? 'success' : 'danger'}`}>
-                        {a.passed ? 'Passed' : 'Failed'}
-                      </span>
-                    </td>
-                    <td className="text-muted small">
-                      {new Date(a.submittedAt).toLocaleString()}
-                    </td>
-                  </tr>
+                  editingId === a.id ? (
+                    <tr key={a.id}>
+                      <td className="fw-semibold">{usersMap[a.studentId]?.name ?? a.studentId}</td>
+                      <td style={{ maxWidth: 90 }}>
+                        <input
+                          type="number" min="0" max="100"
+                          className="form-control form-control-sm"
+                          value={editScore}
+                          onChange={e => setEditScore(e.target.value)}
+                        />
+                      </td>
+                      <td className="text-muted small">auto from score</td>
+                      <td>
+                        <textarea
+                          className="form-control form-control-sm"
+                          rows={2}
+                          placeholder="Feedback for the student…"
+                          value={editFeedback}
+                          onChange={e => setEditFeedback(e.target.value)}
+                        />
+                      </td>
+                      <td className="text-muted small">
+                        {new Date(a.submittedAt).toLocaleString()}
+                      </td>
+                      <td className="d-flex gap-1">
+                        <button className="btn btn-sm btn-success" disabled={saving} onClick={() => saveEdit(a.id)}>
+                          Save
+                        </button>
+                        <button className="btn btn-sm btn-outline-secondary" disabled={saving} onClick={cancelEdit}>
+                          Cancel
+                        </button>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={a.id}>
+                      <td className="fw-semibold">{usersMap[a.studentId]?.name ?? a.studentId}</td>
+                      <td><strong>{a.score}%</strong></td>
+                      <td>
+                        <span className={`badge bg-${a.passed ? 'success' : 'danger'}`}>
+                          {a.passed ? 'Passed' : 'Failed'}
+                        </span>
+                      </td>
+                      <td className="small text-muted" style={{ maxWidth: 240 }}>
+                        {a.feedback || <em>No feedback yet</em>}
+                      </td>
+                      <td className="text-muted small">
+                        {new Date(a.submittedAt).toLocaleString()}
+                      </td>
+                      <td>
+                        <button className="btn btn-sm btn-outline-primary" onClick={() => startEdit(a)}>
+                          Grade
+                        </button>
+                      </td>
+                    </tr>
+                  )
                 ))}
               </tbody>
             </table>

@@ -76,7 +76,7 @@ const ATTEMPT_COLS = `
   id,
   exam_id      AS "examId",
   student_id   AS "studentId",
-  answers, score, passed,
+  answers, score, passed, feedback,
   started_at   AS "startedAt",
   submitted_at AS "submittedAt"
 `;
@@ -300,6 +300,25 @@ app.get('/api/attempts/check/:studentId/:examId', auth, wrap(async (req, res) =>
   res.json({ attempted: rows.length > 0 });
 }));
 
+// Manual grading override — lets a teacher adjust the auto-graded score and leave feedback
+app.patch('/api/attempts/:id', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
+  const { score, feedback } = req.body;
+  if (typeof score !== 'number' || score < 0 || score > 100)
+    return res.status(400).json({ error: 'score must be a number between 0 and 100' });
+
+  const { rows: atRows } = await pool.query('SELECT exam_id FROM attempts WHERE id=$1', [req.params.id]);
+  if (!atRows.length) return res.status(404).json({ error: 'Attempt not found' });
+
+  const { rows: exRows } = await pool.query('SELECT passing_score FROM exams WHERE id=$1', [atRows[0].exam_id]);
+  const passed = score >= exRows[0].passing_score;
+
+  const { rows } = await pool.query(
+    `UPDATE attempts SET score=$1, passed=$2, feedback=$3 WHERE id=$4 RETURNING ${ATTEMPT_COLS}`,
+    [score, passed, feedback ?? null, req.params.id]
+  );
+  res.json(rows[0]);
+}));
+
 // ── Question Bank ─────────────────────────────────────────────────────────────
 
 app.get('/api/questions', auth, wrap(async (_req, res) => {
@@ -430,6 +449,8 @@ async function migrate() {
   await pool.query(`ALTER TABLE exams ADD COLUMN IF NOT EXISTS end_date   TIMESTAMPTZ`);
   // User status for teacher approval (idempotent)
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`);
+  // Teacher feedback / manual grading override (idempotent)
+  await pool.query(`ALTER TABLE attempts ADD COLUMN IF NOT EXISTS feedback TEXT`);
   console.log('Migration complete');
 }
 
