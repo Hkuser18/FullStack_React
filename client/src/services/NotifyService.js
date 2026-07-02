@@ -15,6 +15,7 @@ class NotifyService {
   constructor() {
     if (NotifyService._instance) return NotifyService._instance;
     this._listeners = []; // רשימת הפונקציות שנרשמו להאזנה
+    this._nextId = 0; // מונה עולה - Date.now() לבדו עלול להתנגש בין שתי הודעות באותה מילישנייה
     NotifyService._instance = this;
   }
 
@@ -30,8 +31,8 @@ class NotifyService {
   }
 
   show(message, type = NotifyType.INFO, duration = 3000) {
-    // id ייחודי מבוסס זמן - מאפשר מחיקה של toast ספציפי
-    const notification = { id: Date.now(), message, type, duration };
+    // id ייחודי - מאפשר מחיקה של toast ספציפי
+    const notification = { id: ++this._nextId, message, type, duration };
     Logger.info(`Notify: ${message}`, { type });
     this._emit(notification);
   }

@@ -17,32 +17,43 @@ import AvailableExams from './components/student/AvailableExams';
 import TakeExam       from './components/student/TakeExam';
 import MyResults      from './components/student/MyResults';
 
-import Auth   from './services/AuthService';
-import Logger from './services/LoggerService';
-import Notify from './services/NotifyService';
+import Auth    from './services/AuthService';
+import Logger  from './services/LoggerService';
+import Notify  from './services/NotifyService';
+import Storage from './services/StorageService';
 import './App.css';
 
 const DEFAULT_PAGE = { teacher: 'my-exams', student: 'available-exams', admin: 'admin-panel' };
+const PAGE_KEY = 'ui_page';
 
 function App() {
   const [user,        setUser]        = useState(() => Auth.getCurrentUser());
   const [screen,      setScreen]      = useState('login');
   const [activePage,  setPage]        = useState(() => {
     const u = Auth.getCurrentUser();
-    return u ? DEFAULT_PAGE[u.role] : null;
+    if (!u) return null;
+    return Storage.get(PAGE_KEY)?.activePage ?? DEFAULT_PAGE[u.role];
   });
-  const [pageParams,  setParams]      = useState({});
+  const [pageParams,  setParams]      = useState(() => {
+    const u = Auth.getCurrentUser();
+    return u ? Storage.get(PAGE_KEY)?.pageParams ?? {} : {};
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Persists the current page across a hard refresh — most relevant while
+  // mid-exam, where the answers themselves are already auto-saved separately.
   const handleNavigate = (page, params = {}) => {
     setPage(page);
     setParams(params);
     setSidebarOpen(false);
+    Storage.set(PAGE_KEY, { activePage: page, pageParams: params });
   };
 
   const handleLogin = (loggedInUser) => {
     setUser(loggedInUser);
-    setPage(DEFAULT_PAGE[loggedInUser.role]);
+    const page = DEFAULT_PAGE[loggedInUser.role];
+    setPage(page);
+    Storage.set(PAGE_KEY, { activePage: page, pageParams: {} });
     Logger.info('App: user logged in', { role: loggedInUser.role });
   };
 
@@ -54,6 +65,7 @@ function App() {
     setPage(null);
     setParams({});
     setSidebarOpen(false);
+    Storage.remove(PAGE_KEY);
     Logger.info('App: user logged out');
   };
 
