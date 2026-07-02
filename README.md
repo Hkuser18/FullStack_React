@@ -21,6 +21,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for diagrams (ER diagram, use
 | Server | Express (ESM), JWT (`jsonwebtoken`), `bcryptjs`, `cors` |
 | Database | PostgreSQL (`pg`) |
 | CI | GitHub Actions |
+| Containerization | Docker + Docker Compose |
 | Deployment | Render (web service + static site + managed Postgres) |
 
 ## Project Structure
@@ -33,7 +34,25 @@ docs/     Architecture and database diagrams
 
 ## Getting Started
 
-### Prerequisites
+### Option A: Docker
+
+The fastest way to run the full stack (Postgres + API + client) with nothing installed but Docker:
+
+```bash
+docker compose up --build
+```
+
+This starts Postgres (schema auto-applied on first boot), the API on `http://localhost:3002`, and the client on `http://localhost:8080` (served via nginx, which proxies `/api` to the server container — no CORS setup needed). Seed demo data once the stack is up:
+
+```bash
+docker compose exec server npm run seed
+```
+
+Then log in at `http://localhost:8080` with any of the [demo accounts](#demo-accounts) below. `docker compose down -v` tears everything down including the database volume.
+
+### Option B: Run locally
+
+#### Prerequisites
 - Node.js 20+
 - A PostgreSQL instance (local, Docker, or a hosted DB)
 
