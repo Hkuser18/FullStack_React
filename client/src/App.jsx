@@ -12,6 +12,7 @@ import ExamForm       from './components/teacher/ExamForm';
 import StudentResults from './components/teacher/StudentResults';
 import QuestionBank   from './components/teacher/QuestionBank';
 import LiveMonitor    from './components/teacher/LiveMonitor';
+import Analytics      from './components/teacher/Analytics';
 import AdminPanel     from './components/admin/AdminPanel';
 
 import AvailableExams from './components/student/AvailableExams';
@@ -107,6 +108,8 @@ function App() {
         return <StudentResults user={user} examId={pageParams.examId} onNavigate={handleNavigate} />;
       case 'question-bank':
         return <QuestionBank user={user} onNavigate={handleNavigate} />;
+      case 'analytics':
+        return <Analytics user={user} onNavigate={handleNavigate} />;
 
       // Student pages
       case 'available-exams':

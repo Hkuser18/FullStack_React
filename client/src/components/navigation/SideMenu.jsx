@@ -4,6 +4,7 @@ const TEACHER_ITEMS = [
   { key: 'create-exam',     label: 'Create Exam',     icon: '✏️'  },
   { key: 'question-bank',   label: 'Question Bank',   icon: '🗂️'  },
   { key: 'student-results', label: 'Student Results', icon: '📊' },
+  { key: 'analytics',       label: 'Analytics',       icon: '📈' },
 ];
 
 const STUDENT_ITEMS = [
