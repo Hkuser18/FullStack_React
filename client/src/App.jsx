@@ -11,6 +11,7 @@ import ExamList       from './components/teacher/ExamList';
 import ExamForm       from './components/teacher/ExamForm';
 import StudentResults from './components/teacher/StudentResults';
 import QuestionBank   from './components/teacher/QuestionBank';
+import LiveMonitor    from './components/teacher/LiveMonitor';
 import AdminPanel     from './components/admin/AdminPanel';
 
 import AvailableExams from './components/student/AvailableExams';
@@ -96,6 +97,8 @@ function App() {
       // Teacher pages
       case 'my-exams':
         return <ExamList user={user} onNavigate={handleNavigate} />;
+      case 'live-monitor':
+        return <LiveMonitor user={user} onNavigate={handleNavigate} />;
       case 'create-exam':
         return <ExamForm user={user} onNavigate={handleNavigate} />;
       case 'edit-exam':

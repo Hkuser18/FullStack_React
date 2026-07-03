@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS attempts (
   passed       BOOLEAN     NOT NULL,
   feedback     TEXT,
   started_at   TIMESTAMPTZ NOT NULL,
-  submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  tab_switch_count INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS question_bank (

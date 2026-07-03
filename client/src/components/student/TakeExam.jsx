@@ -6,6 +6,7 @@ import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
 import Storage from '../../services/StorageService';
+import SocketService from '../../services/SocketService';
 
 const fmt = (secs) =>
   `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
@@ -32,6 +33,8 @@ const TakeExam = ({ user, examId, onNavigate }) => {
 
   // ── Load exam ─────────────────────────────────────────────────────────────
   useEffect(() => {
+    let joinHandler = null;
+
     Api.getExamById(examId)
       .then(data => {
         setExam(data);
@@ -54,19 +57,41 @@ const TakeExam = ({ user, examId, onNavigate }) => {
           setTimeLeft(data.duration * 60);
         }
         setPhase('taking');
+
+        // Live Monitor: join the exam's monitoring room. 'connect' also fires on every
+        // reconnect (Socket.IO doesn't replay prior emits by itself), so re-join there too.
+        SocketService.connect();
+        joinHandler = () => SocketService.emit('exam:join', { examId, totalQuestions: data.questions.length });
+        SocketService.on('connect', joinHandler);
+        if (SocketService.getSocket()?.connected) joinHandler();
       })
       .catch(err => {
         Notify.error('Could not load exam.');
         Logger.error('TakeExam.load', err.message);
         onNavigate('available-exams');
       });
+
+    return () => {
+      if (joinHandler) SocketService.off('connect', joinHandler);
+    };
   }, [examId]);
 
   // ── Auto-save ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'taking' || !startedAt) return;
     Storage.set(autosaveKey, { answers, startedAt });
+
+    const answeredCount = exam.questions.filter((q, i) => isAnswered(q, answers[i])).length;
+    SocketService.emit('exam:progress', { examId, answeredCount });
   }, [answers, phase, startedAt]);
+
+  // ── Live Monitor: tab-switch / window-blur signal ────────────────────────
+  useEffect(() => {
+    if (phase !== 'taking') return;
+    const onBlur = () => SocketService.emit('exam:tab-blur', { examId });
+    window.addEventListener('blur', onBlur);
+    return () => window.removeEventListener('blur', onBlur);
+  }, [phase, examId]);
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const submit = useCallback((auto = false) => {

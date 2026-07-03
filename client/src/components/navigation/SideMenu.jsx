@@ -1,5 +1,6 @@
 const TEACHER_ITEMS = [
   { key: 'my-exams',        label: 'My Exams',        icon: '📋' },
+  { key: 'live-monitor',    label: 'Live Monitor',    icon: '📡' },
   { key: 'create-exam',     label: 'Create Exam',     icon: '✏️'  },
   { key: 'question-bank',   label: 'Question Bank',   icon: '🗂️'  },
   { key: 'student-results', label: 'Student Results', icon: '📊' },

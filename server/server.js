@@ -1,11 +1,14 @@
+import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { Server } from 'socket.io';
 import { GoogleGenAI } from '@google/genai';
 import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS, SEED_QUESTION_BANK } from './db.js';
+import { registerSocketHandlers } from './socket.js';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -19,6 +22,13 @@ const EXAM_STATUSES = ['draft', 'published', 'closed'];
 app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json());
+
+// Live Monitor real-time layer — shares the same port/CORS origin as the REST API
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' },
+});
+const monitorBridge = registerSocketHandlers(io);
 
 // Throttles brute-force login/register attempts per IP
 const authLimiter = rateLimit({
@@ -88,7 +98,8 @@ const ATTEMPT_COLS = `
   student_id   AS "studentId",
   answers, score, passed, feedback,
   started_at   AS "startedAt",
-  submitted_at AS "submittedAt"
+  submitted_at AS "submittedAt",
+  tab_switch_count AS "tabSwitchCount"
 `;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -275,13 +286,16 @@ app.post('/api/attempts', auth, requireRole('student'), wrap(async (req, res) =>
   const score  = Math.round((correct / questions.length) * 100);
   const passed = score >= passing_score;
 
+  const tabSwitchCount = monitorBridge.getAndClearTabSwitchCount(examId, studentId);
+
   const id = `a_${Date.now()}`;
   const { rows } = await pool.query(
-    `INSERT INTO attempts (id, exam_id, student_id, answers, score, passed, started_at, submitted_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+    `INSERT INTO attempts (id, exam_id, student_id, answers, score, passed, started_at, submitted_at, tab_switch_count)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8)
      RETURNING ${ATTEMPT_COLS}`,
-    [id, examId, studentId, JSON.stringify(answers), score, passed, startedAt]
+    [id, examId, studentId, JSON.stringify(answers), score, passed, startedAt, tabSwitchCount]
   );
+  monitorBridge.broadcastSubmitted(examId, studentId, rows[0]);
   res.status(201).json(rows[0]);
 }));
 
@@ -569,10 +583,12 @@ async function migrate() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`);
   // Teacher feedback / manual grading override (idempotent)
   await pool.query(`ALTER TABLE attempts ADD COLUMN IF NOT EXISTS feedback TEXT`);
+  // Live Monitor: tab-switch count captured at submit time (idempotent)
+  await pool.query(`ALTER TABLE attempts ADD COLUMN IF NOT EXISTS tab_switch_count INT NOT NULL DEFAULT 0`);
   console.log('Migration complete');
 }
 
-app.listen(PORT, async () => {
+server.listen(PORT, async () => {
   console.log(`ExamsApp server running on port ${PORT}`);
   await migrate().catch(err => console.error('Migration failed:', err.message));
 });
