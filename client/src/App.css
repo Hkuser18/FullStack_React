@@ -50,20 +50,14 @@ html, body {
 
 /* ── App root layout ───────────────────────────────────────────────────────── */
 .app-root {
-  display: flex;
-  flex-direction: column;
+  /* Bootstrap has no dvh utility; vh-100 would also fight the fallback below with !important. */
   height: 100vh;
-  width: 100%;
-  overflow: hidden;
+  height: 100dvh;
 }
 
 .app-body {
-  display: flex;
-  flex-direction: row;
-  flex: 1;
+  /* flex-grow-1 alone doesn't reset min-height, so app-main's overflow-auto has no bound to scroll within. */
   min-height: 0;
-  overflow: hidden;
-  position: relative;
 }
 
 /* ── Navbar ────────────────────────────────────────────────────────────────── */
@@ -194,9 +188,14 @@ html, body {
 
 /* ── Sidebar ───────────────────────────────────────────────────────────────── */
 .app-sidebar {
+  /* Bootstrap's .offcanvas-md reads these vars for its own mobile width/bg — keeps both breakpoints in sync. */
+  --bs-offcanvas-width: var(--sidebar-w);
+  --bs-offcanvas-bg: var(--sidebar-bg);
+  --bs-offcanvas-border-width: 0;
   width: var(--sidebar-w);
   min-width: var(--sidebar-w);
-  background: var(--sidebar-bg);
+  /* Bootstrap forces background-color:transparent!important on .offcanvas-md at >=768px. */
+  background: var(--sidebar-bg) !important;
   display: flex;
   flex-direction: column;
   box-shadow: 2px 0 8px rgba(0,0,0,0.12);
@@ -271,9 +270,7 @@ html, body {
 
 /* ── Main content ──────────────────────────────────────────────────────────── */
 .app-main {
-  flex: 1;
   min-width: 0;
-  overflow-y: auto;
   padding: 2rem 2.5rem;
   background: var(--gray-50);
 }
@@ -547,20 +544,12 @@ html, body {
     display: flex;
   }
 
-  /* Sidebar becomes a fixed overlay sliding in from the left */
-  .app-sidebar {
-    position: fixed;
+  /* Bootstrap's .offcanvas-md handles the fixed-overlay/slide-in/hidden mechanics below this
+     breakpoint; only the vertical offset (start below the navbar, not over it) needs overriding. */
+  .app-sidebar.offcanvas-start {
     top: var(--navbar-h);
-    left: 0;
     height: calc(100vh - var(--navbar-h));
-    z-index: 50;
-    transform: translateX(-100%);
-    transition: transform 0.25s ease;
-    box-shadow: 4px 0 16px rgba(0,0,0,0.25);
-  }
-
-  .app-sidebar.open {
-    transform: translateX(0);
+    height: calc(100dvh - var(--navbar-h));
   }
 
   /* Main content takes full width on mobile */

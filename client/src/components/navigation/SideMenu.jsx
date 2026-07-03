@@ -22,7 +22,11 @@ const SideMenu = ({ role, activePage, onNavigate, isOpen }) => {
               : STUDENT_ITEMS;
 
   return (
-    <aside className={`app-sidebar${isOpen ? ' open' : ''}`}>
+    <aside
+      className={`app-sidebar offcanvas-md offcanvas-start${isOpen ? ' show' : ''}`}
+      tabIndex="-1"
+      id="sidebarMenu"
+    >
       <div className="sidebar-header">
         <span>{ROLE_LABELS[role] ?? 'Panel'}</span>
       </div>

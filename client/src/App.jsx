@@ -124,7 +124,7 @@ function App() {
 
   // ── Authenticated layout ──────────────────────────────────────────────────
   return (
-    <div className="app-root">
+    <div className="app-root d-flex flex-column w-100 overflow-hidden">
       <NotifyToast />
       <NavBar
         user={user}
@@ -133,7 +133,7 @@ function App() {
         sidebarOpen={sidebarOpen}
       />
 
-      <div className="app-body">
+      <div className="app-body d-flex flex-grow-1 overflow-hidden position-relative">
         {sidebarOpen && (
           <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
         )}
@@ -143,7 +143,7 @@ function App() {
           onNavigate={handleNavigate}
           isOpen={sidebarOpen}
         />
-        <main className="app-main animate-fade-in">
+        <main className="app-main flex-grow-1 overflow-auto animate-fade-in">
           {renderPage()}
         </main>
       </div>
