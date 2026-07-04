@@ -538,7 +538,10 @@ html, body {
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* ── Responsive — mobile (< 768px) ────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════════════ */
-@media (max-width: 767px) {
+/* 767.98px matches Bootstrap's own .offcanvas-md breakpoint exactly — a plain 767px
+   left a dead zone (767.01-767.98px) where the sidebar was hidden but the hamburger
+   to open it hadn't appeared yet (reachable via non-integer display scaling/zoom). */
+@media (max-width: 767.98px) {
   /* Show hamburger */
   .hamburger-btn {
     display: flex;

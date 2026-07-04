@@ -25,7 +25,13 @@ function LiveMonitorSession({ examId, examTitle, usersMap }) {
 
   useEffect(() => {
     SocketService.connect();
-    SocketService.emit('monitor:subscribe', { examId });
+
+    // Room membership doesn't survive a reconnect and Socket.IO doesn't replay prior emits,
+    // so re-subscribe on every 'connect' (fires on both the initial connect and any reconnect) —
+    // same fix TakeExam.jsx applies for exam:join.
+    const resubscribe = () => SocketService.emit('monitor:subscribe', { examId });
+    SocketService.on('connect', resubscribe);
+    if (SocketService.getSocket()?.connected) resubscribe();
 
     const onSnapshot = ({ examId: eId, sessions: list }) => {
       if (eId !== examId) return;
@@ -76,6 +82,7 @@ function LiveMonitorSession({ examId, examTitle, usersMap }) {
 
     return () => {
       SocketService.emit('monitor:unsubscribe', { examId });
+      SocketService.off('connect', resubscribe);
       SocketService.off('monitor:snapshot', onSnapshot);
       SocketService.off('monitor:update', onUpdate);
       SocketService.off('monitor:violation', onViolation);

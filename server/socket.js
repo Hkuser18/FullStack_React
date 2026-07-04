@@ -21,7 +21,7 @@ const toPublicSession = (examId, studentId, session) => ({
 
 // Registers Socket.IO auth + all Live Monitor event handling on the given io instance.
 // Returns { getAndClearTabSwitchCount, broadcastSubmitted } for server.js's REST routes to call.
-export function registerSocketHandlers(io) {
+export function registerSocketHandlers(io, pool) {
   // examId -> Map<studentId, session>
   const activeSessions = new Map();
 
@@ -95,8 +95,12 @@ export function registerSocketHandlers(io) {
     });
 
     // ── Teacher events ───────────────────────────────────────────────────────
-    socket.on('monitor:subscribe', ({ examId }) => {
+    socket.on('monitor:subscribe', async ({ examId }) => {
       if (!['teacher', 'admin'].includes(socket.user.role)) return;
+      if (socket.user.role === 'teacher') {
+        const { rows } = await pool.query('SELECT created_by FROM exams WHERE id=$1', [examId]);
+        if (!rows.length || rows[0].created_by !== socket.user.id) return;
+      }
       socket.join(examRoom(examId));
       const sessions = getExamSessions(examId);
       const snapshot = [...sessions.entries()].map(([studentId, session]) =>

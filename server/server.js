@@ -28,7 +28,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' },
 });
-const monitorBridge = registerSocketHandlers(io);
+const monitorBridge = registerSocketHandlers(io, pool);
 
 // Throttles brute-force login/register attempts per IP
 const authLimiter = rateLimit({
