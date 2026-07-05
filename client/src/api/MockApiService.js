@@ -7,6 +7,26 @@ import Storage   from '../services/StorageService';
 import Logger    from '../services/LoggerService';
 import Config    from '../services/ConfigService';
 
+function getDiceCoefficient(s1, s2) {
+  if (s1 === s2) return 1;
+  if (s1.length < 2 || s2.length < 2) return 0;
+  const getBigrams = (str) => {
+    const bg = new Map();
+    for (let i = 0; i < str.length - 1; i++) {
+      const b = str.substr(i, 2);
+      bg.set(b, (bg.get(b) || 0) + 1);
+    }
+    return bg;
+  };
+  const bg1 = getBigrams(s1);
+  const bg2 = getBigrams(s2);
+  let intersection = 0;
+  for (const [bg, count] of bg1.entries()) {
+    if (bg2.has(bg)) intersection += Math.min(count, bg2.get(bg));
+  }
+  return (2.0 * intersection) / (s1.length - 1 + s2.length - 1);
+}
+
 // Enum לסטטוסי מבחן - שימוש בקבועים מונע שגיאות כתיב
 export const ExamStatus = { DRAFT: 'draft', PUBLISHED: 'published', CLOSED: 'closed' };
 
@@ -263,12 +283,40 @@ class MockApiService {
       const score  = Math.round((correct / exam.questions.length) * 100);
       const passed = score >= (exam.passingScore ?? 60);
 
+      // --- Plagiarism Check for Open Questions ---
+      const cheatFlags = [];
+      const prevAttempts = this._attempts.filter(a => a.examId === attemptData.examId);
+      
+      attemptData.answers.forEach((ans, i) => {
+        const q = exam.questions[i];
+        if (q && q.type === 'open') {
+          const text = String(ans ?? '').trim();
+          const words = text.split(/\s+/).filter(w => w.length > 0);
+          if (words.length >= 4) {
+            prevAttempts.forEach(prev => {
+              const prevAns = String(prev.answers[i] ?? '').trim();
+              if (prevAns) {
+                const similarity = getDiceCoefficient(text.toLowerCase(), prevAns.toLowerCase());
+                if (similarity >= 0.8) {
+                  cheatFlags.push({
+                    questionIndex: i,
+                    matchAttemptId: prev.id,
+                    similarity: Math.round(similarity * 100)
+                  });
+                }
+              }
+            });
+          }
+        }
+      });
+
       const attempt = {
         ...attemptData,
         id:          `a_${Date.now()}`,
         score,
         passed,
         submittedAt: new Date().toISOString(),
+        cheatFlags,
       };
       this._attempts.push(attempt);
       Storage.set('db_attempts', this._attempts);
