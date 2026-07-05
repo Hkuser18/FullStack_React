@@ -43,7 +43,7 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
 
     Api.getUsers().then(all => {
       setUsersMap(Object.fromEntries(all.map(u => [u.id, u])));
-    });
+    }).catch(() => Notify.error('Failed to load student names.'));
   }, []);
 
   useEffect(() => {

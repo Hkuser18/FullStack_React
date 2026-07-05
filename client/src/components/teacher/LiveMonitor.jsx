@@ -196,7 +196,7 @@ const LiveMonitor = ({ user, onNavigate }) => {
 
     Api.getUsers().then(all => {
       setUsersMap(Object.fromEntries(all.map(u => [u.id, u])));
-    });
+    }).catch(() => Notify.error('Failed to load student names.'));
   }, [user.id]);
 
   if (!SERVER_ENABLED) {

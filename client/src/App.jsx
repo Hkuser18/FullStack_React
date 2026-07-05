@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 import LoginPage    from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
@@ -41,6 +41,21 @@ function App() {
     return u ? Storage.get(PAGE_KEY)?.pageParams ?? {} : {};
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // auth_token is a single shared localStorage key — logging into a different account
+  // in another tab silently overwrites it. This tab's React state (and every UI element
+  // built from it) would keep showing the OLD user while every new request actually goes
+  // out with the NEW tab's token, since ServerApiService reads localStorage fresh on each
+  // call. The 'storage' event only fires for changes made in other tabs/windows, so this
+  // reloads to resync as soon as that happens, rather than silently sending mismatched
+  // requests that fail with a confusing role/permission error.
+  useEffect(() => {
+    const onStorageChange = (e) => {
+      if (e.key === 'auth_token') window.location.reload();
+    };
+    window.addEventListener('storage', onStorageChange);
+    return () => window.removeEventListener('storage', onStorageChange);
+  }, []);
 
   // Persists the current page across a hard refresh — most relevant while
   // mid-exam, where the answers themselves are already auto-saved separately.
