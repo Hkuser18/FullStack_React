@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { Server } from 'socket.io';
 import { GoogleGenAI } from '@google/genai';
+import stringSimilarity from 'string-similarity';
 import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS, SEED_QUESTION_BANK } from './db.js';
 import { registerSocketHandlers } from './socket.js';
 
@@ -99,7 +100,8 @@ const ATTEMPT_COLS = `
   answers, score, passed, feedback,
   started_at   AS "startedAt",
   submitted_at AS "submittedAt",
-  tab_switch_count AS "tabSwitchCount"
+  tab_switch_count AS "tabSwitchCount",
+  cheat_flags  AS "cheatFlags"
 `;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -299,14 +301,44 @@ app.post('/api/attempts', auth, requireRole('student'), wrap(async (req, res) =>
   const score  = Math.round((correct / questions.length) * 100);
   const passed = score >= passing_score;
 
-  const tabSwitchCount = monitorBridge.getTabSwitchCount(examId, studentId);
+  const tabSwitchCount = monitorBridge.getAndClearTabSwitchCount(examId, studentId);
+
+  // --- Plagiarism Check for Open Questions ---
+  const cheatFlags = [];
+  const { rows: prevAttempts } = await pool.query(
+    'SELECT answers, id as "matchAttemptId" FROM attempts WHERE exam_id=$1',
+    [examId]
+  );
+  
+  answers.forEach((ans, i) => {
+    const q = questions[i];
+    if (q && q.type === 'open') {
+      const text = String(ans ?? '').trim();
+      const words = text.split(/\s+/).filter(w => w.length > 0);
+      if (words.length >= 4) {
+        prevAttempts.forEach(prev => {
+          const prevAns = String(prev.answers[i] ?? '').trim();
+          if (prevAns) {
+            const similarity = stringSimilarity.compareTwoStrings(text.toLowerCase(), prevAns.toLowerCase());
+            if (similarity >= 0.8) {
+              cheatFlags.push({
+                questionIndex: i,
+                matchAttemptId: prev.matchAttemptId,
+                similarity: Math.round(similarity * 100)
+              });
+            }
+          }
+        });
+      }
+    }
+  });
 
   const id = `a_${Date.now()}`;
   const { rows } = await pool.query(
-    `INSERT INTO attempts (id, exam_id, student_id, answers, score, passed, started_at, submitted_at, tab_switch_count)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8)
+    `INSERT INTO attempts (id, exam_id, student_id, answers, score, passed, started_at, submitted_at, tab_switch_count, cheat_flags)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9)
      RETURNING ${ATTEMPT_COLS}`,
-    [id, examId, studentId, JSON.stringify(answers), score, passed, startedAt, tabSwitchCount]
+    [id, examId, studentId, JSON.stringify(answers), score, passed, startedAt, tabSwitchCount, JSON.stringify(cheatFlags)]
   );
 
   // A tab-blur can land during the INSERT's await — re-check before the session is deleted
@@ -616,6 +648,8 @@ async function migrate() {
   await pool.query(`ALTER TABLE attempts ADD COLUMN IF NOT EXISTS feedback TEXT`);
   // Live Monitor: tab-switch count captured at submit time (idempotent)
   await pool.query(`ALTER TABLE attempts ADD COLUMN IF NOT EXISTS tab_switch_count INT NOT NULL DEFAULT 0`);
+  // Cheating check: store flagged questions and similarity score
+  await pool.query(`ALTER TABLE attempts ADD COLUMN IF NOT EXISTS cheat_flags JSONB NOT NULL DEFAULT '[]'`);
   console.log('Migration complete');
 }
 

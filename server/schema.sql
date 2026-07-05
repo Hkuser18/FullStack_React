@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS attempts (
   feedback     TEXT,
   started_at   TIMESTAMPTZ NOT NULL,
   submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  tab_switch_count INT NOT NULL DEFAULT 0
+  tab_switch_count INT NOT NULL DEFAULT 0,
+  cheat_flags  JSONB       NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS question_bank (
