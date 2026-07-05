@@ -46,9 +46,15 @@ function LiveMonitorSession({ examId, examTitle, usersMap }) {
 
     const onViolation = ({ examId: eId, studentId, tabSwitchCount }) => {
       if (eId !== examId) return;
-      setSessions(prev => prev[studentId]
-        ? { ...prev, [studentId]: { ...prev[studentId], tabSwitchCount } }
-        : prev);
+      // A violation can arrive before the initial snapshot has populated this student (both
+      // are independent events with no ordering guarantee) — insert a placeholder rather than
+      // dropping it, so the count isn't lost. The next monitor:update fills in the real fields.
+      setSessions(prev => ({
+        ...prev,
+        [studentId]: prev[studentId]
+          ? { ...prev[studentId], tabSwitchCount }
+          : { studentId, examId, questionsAnswered: 0, totalQuestions: 0, connected: true, tabSwitchCount },
+      }));
       const name = usersMap[studentId]?.name ?? studentId;
       Notify.warning(`${name} switched tabs (${tabSwitchCount}x)`);
     };
@@ -146,7 +152,7 @@ function LiveMonitorSession({ examId, examTitle, usersMap }) {
                         <div className="progress flex-grow-1" style={{ height: 6 }}>
                           <div
                             className="progress-bar bg-info"
-                            style={{ width: `${(s.questionsAnswered / s.totalQuestions) * 100}%` }}
+                            style={{ width: `${s.totalQuestions ? (s.questionsAnswered / s.totalQuestions) * 100 : 0}%` }}
                           />
                         </div>
                         <small className="text-muted">{s.questionsAnswered}/{s.totalQuestions}</small>

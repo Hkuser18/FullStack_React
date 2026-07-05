@@ -233,6 +233,20 @@ app.post('/api/exams', auth, requireRole('teacher', 'admin'), wrap(async (req, r
 
 app.put('/api/exams/:id', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
   const { title, description, duration, passingScore, questions, startDate = null, endDate = null } = req.body;
+
+  const { rows: existingRows } = await pool.query('SELECT questions FROM exams WHERE id=$1', [req.params.id]);
+  if (!existingRows.length) return res.status(404).json({ error: 'Exam not found' });
+
+  // Attempts store answers positionally aligned to the question order at submission time —
+  // changing the question list afterward would silently misattribute stored answers to the
+  // wrong questions (most visibly in Analytics' per-question difficulty breakdown).
+  const questionsChanged = JSON.stringify(existingRows[0].questions) !== JSON.stringify(questions);
+  if (questionsChanged) {
+    const { rows: attemptRows } = await pool.query('SELECT 1 FROM attempts WHERE exam_id=$1 LIMIT 1', [req.params.id]);
+    if (attemptRows.length)
+      return res.status(409).json({ error: 'Cannot change questions after students have already submitted attempts.' });
+  }
+
   const { rows } = await pool.query(
     `UPDATE exams
      SET title=$1, description=$2, duration=$3, passing_score=$4, questions=$5, start_date=$6, end_date=$7
@@ -240,7 +254,6 @@ app.put('/api/exams/:id', auth, requireRole('teacher', 'admin'), wrap(async (req
      RETURNING ${EXAM_COLS}`,
     [title, description, duration, passingScore, JSON.stringify(questions), startDate, endDate, req.params.id]
   );
-  if (!rows.length) return res.status(404).json({ error: 'Exam not found' });
   res.json(rows[0]);
 }));
 
@@ -286,7 +299,7 @@ app.post('/api/attempts', auth, requireRole('student'), wrap(async (req, res) =>
   const score  = Math.round((correct / questions.length) * 100);
   const passed = score >= passing_score;
 
-  const tabSwitchCount = monitorBridge.getAndClearTabSwitchCount(examId, studentId);
+  const tabSwitchCount = monitorBridge.getTabSwitchCount(examId, studentId);
 
   const id = `a_${Date.now()}`;
   const { rows } = await pool.query(
@@ -295,11 +308,23 @@ app.post('/api/attempts', auth, requireRole('student'), wrap(async (req, res) =>
      RETURNING ${ATTEMPT_COLS}`,
     [id, examId, studentId, JSON.stringify(answers), score, passed, startedAt, tabSwitchCount]
   );
+
+  // A tab-blur can land during the INSERT's await — re-check before the session is deleted
+  // (inside broadcastSubmitted) so that increment isn't silently lost.
+  const finalTabSwitchCount = monitorBridge.getTabSwitchCount(examId, studentId);
+  if (finalTabSwitchCount > tabSwitchCount) {
+    await pool.query('UPDATE attempts SET tab_switch_count=$1 WHERE id=$2', [finalTabSwitchCount, id]);
+    rows[0].tabSwitchCount = finalTabSwitchCount;
+  }
+
   monitorBridge.broadcastSubmitted(examId, studentId, rows[0]);
   res.status(201).json(rows[0]);
 }));
 
+// Students can only fetch their own history; admins can fetch anyone's.
 app.get('/api/attempts/student/:studentId', auth, wrap(async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.id !== req.params.studentId)
+    return res.status(403).json({ error: 'Forbidden: not your attempt history' });
   const { rows } = await pool.query(
     `SELECT ${ATTEMPT_COLS} FROM attempts WHERE student_id=$1`,
     [req.params.studentId]
@@ -307,7 +332,13 @@ app.get('/api/attempts/student/:studentId', auth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.get('/api/attempts/exam/:examId', auth, wrap(async (req, res) => {
+// Teachers can only fetch attempts for exams they own; admins can fetch any exam's.
+app.get('/api/attempts/exam/:examId', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
+  if (req.user.role === 'teacher') {
+    const { rows: examRows } = await pool.query('SELECT created_by FROM exams WHERE id=$1', [req.params.examId]);
+    if (!examRows.length || examRows[0].created_by !== req.user.id)
+      return res.status(403).json({ error: 'Forbidden: you do not own this exam' });
+  }
   const { rows } = await pool.query(
     `SELECT ${ATTEMPT_COLS} FROM attempts WHERE exam_id=$1`,
     [req.params.examId]

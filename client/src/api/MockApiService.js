@@ -144,6 +144,12 @@ class MockApiService {
     return this._async(() => {
       const idx = this._exams.findIndex(e => e.id === id);
       if (idx === -1) throw new Error(`Exam not found: ${id}`);
+      // Attempts store answers positionally aligned to the question order at submission
+      // time — changing it afterward would misattribute stored answers to the wrong questions.
+      if (updates.questions && JSON.stringify(this._exams[idx].questions) !== JSON.stringify(updates.questions)) {
+        if (this._attempts.some(a => a.examId === id))
+          throw new Error('Cannot change questions after students have already submitted attempts.');
+      }
       // Prevent overwriting id, status, createdBy via updates
       const { id: _id, status, createdBy, createdAt, ...safe } = updates; // eslint-disable-line no-unused-vars
       this._exams[idx] = { ...this._exams[idx], ...safe };

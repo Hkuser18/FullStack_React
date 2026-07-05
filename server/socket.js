@@ -118,7 +118,10 @@ export function registerSocketHandlers(io, pool) {
       const { examId, studentId } = socket.data;
       if (!examId || !studentId) return;
       const session = activeSessions.get(examId)?.get(studentId);
-      if (!session) return;
+      // Ignore a disconnect from a superseded connection: if the student already
+      // reconnected (a fresh exam:join replaced socketId) before this stale
+      // 'disconnect' event was processed, don't evict the still-active session.
+      if (!session || session.socketId !== socket.id) return;
 
       session.connected = false;
       broadcastUpdate(examId, studentId);
@@ -131,8 +134,10 @@ export function registerSocketHandlers(io, pool) {
   });
 
   return {
-    // Called by POST /api/attempts before the INSERT, so the count can be persisted.
-    getAndClearTabSwitchCount(examId, studentId) {
+    // A pure read — does NOT clear anything. POST /api/attempts calls this both before the
+    // INSERT (to get the value to persist) and again right before broadcastSubmitted deletes
+    // the session (to catch a tab-blur that landed during the INSERT's async gap).
+    getTabSwitchCount(examId, studentId) {
       const session = activeSessions.get(examId)?.get(studentId);
       return session?.tabSwitchCount ?? 0;
     },
