@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
@@ -31,6 +31,7 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
   const [usersMap,        setUsersMap]        = useState({});
   const [loading,         setLoading]         = useState(false);
   const [editingId,       setEditingId]       = useState(null);
+  const [expandedId,      setExpandedId]      = useState(null);
   const [editScore,       setEditScore]       = useState('');
   const [editFeedback,    setEditFeedback]    = useState('');
   const [saving,          setSaving]          = useState(false);
@@ -65,6 +66,7 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
   };
 
   const cancelEdit = () => setEditingId(null);
+  const toggleExpand = (id) => setExpandedId(expandedId === id ? null : id);
 
   const saveEdit = (attemptId) => {
     const score = Number(editScore);
@@ -157,66 +159,110 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
                   <th>Status</th>
                   <th>Feedback</th>
                   <th>Submitted</th>
-                  <th></th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {attempts.map(a => (
-                  editingId === a.id ? (
-                    <tr key={a.id}>
-                      <td className="fw-semibold">{usersMap[a.studentId]?.name ?? a.studentId}</td>
-                      <td style={{ maxWidth: 90 }}>
-                        <input
-                          type="number" min="0" max="100"
-                          className="form-control form-control-sm"
-                          value={editScore}
-                          onChange={e => setEditScore(e.target.value)}
-                        />
-                      </td>
-                      <td className="text-muted small">auto from score</td>
-                      <td>
-                        <textarea
-                          className="form-control form-control-sm"
-                          rows={2}
-                          placeholder="Feedback for the student…"
-                          value={editFeedback}
-                          onChange={e => setEditFeedback(e.target.value)}
-                        />
-                      </td>
-                      <td className="text-muted small">
-                        {new Date(a.submittedAt).toLocaleString()}
-                      </td>
-                      <td className="d-flex gap-1">
-                        <button className="btn btn-sm btn-success" disabled={saving} onClick={() => saveEdit(a.id)}>
-                          Save
-                        </button>
-                        <button className="btn btn-sm btn-outline-secondary" disabled={saving} onClick={cancelEdit}>
-                          Cancel
-                        </button>
-                      </td>
-                    </tr>
-                  ) : (
-                    <tr key={a.id}>
-                      <td className="fw-semibold">{usersMap[a.studentId]?.name ?? a.studentId}</td>
-                      <td><strong>{a.score}%</strong></td>
-                      <td>
-                        <span className={`badge bg-${a.passed ? 'success' : 'danger'}`}>
-                          {a.passed ? 'Passed' : 'Failed'}
-                        </span>
-                      </td>
-                      <td className="small text-muted" style={{ maxWidth: 240 }}>
-                        {a.feedback || <em>No feedback yet</em>}
-                      </td>
-                      <td className="text-muted small">
-                        {new Date(a.submittedAt).toLocaleString()}
-                      </td>
-                      <td>
-                        <button className="btn btn-sm btn-outline-primary" onClick={() => startEdit(a)}>
-                          Grade
-                        </button>
-                      </td>
-                    </tr>
-                  )
+                  <React.Fragment key={a.id}>
+                    {editingId === a.id ? (
+                      <tr key={`${a.id}-edit`}>
+                        <td className="fw-semibold">
+                          {usersMap[a.studentId]?.name ?? a.studentId}
+                          {a.cheatFlags?.length > 0 && (
+                            <span className="badge bg-warning text-dark ms-2" title="Plagiarism flag detected">⚠️ Flagged</span>
+                          )}
+                        </td>
+                        <td style={{ maxWidth: 90 }}>
+                          <input
+                            type="number" min="0" max="100"
+                            className="form-control form-control-sm"
+                            value={editScore}
+                            onChange={e => setEditScore(e.target.value)}
+                          />
+                        </td>
+                        <td className="text-muted small">auto from score</td>
+                        <td>
+                          <textarea
+                            className="form-control form-control-sm"
+                            rows={2}
+                            placeholder="Feedback for the student…"
+                            value={editFeedback}
+                            onChange={e => setEditFeedback(e.target.value)}
+                          />
+                        </td>
+                        <td className="text-muted small">
+                          {new Date(a.submittedAt).toLocaleString()}
+                        </td>
+                        <td>
+                          <div className="d-flex gap-1">
+                            <button className="btn btn-sm btn-success" disabled={saving} onClick={() => saveEdit(a.id)}>
+                              Save
+                            </button>
+                            <button className="btn btn-sm btn-outline-secondary" disabled={saving} onClick={cancelEdit}>
+                              Cancel
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={`${a.id}-view`}>
+                        <td className="fw-semibold">
+                          {usersMap[a.studentId]?.name ?? a.studentId}
+                          {a.cheatFlags?.length > 0 && (
+                            <span className="badge bg-warning text-dark ms-2" title="Plagiarism flag detected">⚠️ Flagged</span>
+                          )}
+                        </td>
+                        <td><strong>{a.score}%</strong></td>
+                        <td>
+                          <span className={`badge bg-${a.passed ? 'success' : 'danger'}`}>
+                            {a.passed ? 'Passed' : 'Failed'}
+                          </span>
+                        </td>
+                        <td className="small text-muted" style={{ maxWidth: 240 }}>
+                          {a.feedback || <em>No feedback yet</em>}
+                        </td>
+                        <td className="text-muted small">
+                          {new Date(a.submittedAt).toLocaleString()}
+                        </td>
+                        <td>
+                          <div className="d-flex gap-1">
+                            <button className="btn btn-sm btn-outline-primary" onClick={() => startEdit(a)}>
+                              Grade
+                            </button>
+                            <button className="btn btn-sm btn-outline-info" onClick={() => toggleExpand(a.id)}>
+                              {expandedId === a.id ? 'Hide Answers' : 'View Answers'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {expandedId === a.id && (
+                      <tr key={`${a.id}-expand`}>
+                        <td colSpan="6" className="bg-light">
+                          <div className="p-3 border rounded bg-white shadow-sm">
+                            <h6 className="fw-bold mb-3">Submitted Answers:</h6>
+                            {selectedExam?.questions.map((q, i) => {
+                              const flag = a.cheatFlags?.find(f => f.questionIndex === i);
+                              return (
+                                <div key={i} className="mb-3 pb-3 border-bottom">
+                                  <div className="fw-semibold mb-1">Q{i + 1}: {q.text}</div>
+                                  <div className="ps-3 border-start border-3 border-primary text-muted mt-2">
+                                    {q.type === 'open' ? (a.answers[i] || <em>No answer</em>) : (q.options ? q.options[a.answers[i]] : a.answers[i])}
+                                  </div>
+                                  {flag && (
+                                    <div className="mt-2 text-danger small fw-bold">
+                                      ⚠️ Flagged: {flag.similarity}% similarity to another student
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
