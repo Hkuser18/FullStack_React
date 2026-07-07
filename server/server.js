@@ -102,6 +102,11 @@ const ATTEMPT_COLS = `
   tab_switch_count AS "tabSwitchCount"
 `;
 
+// Strips the answer key (correctOption/keywords) so a student can't read it off an exam
+// they haven't submitted yet — teachers/admins still get the full question data.
+const stripAnswerKey = (questions) =>
+  questions.map(({ correctOption, keywords, ...rest }) => rest); // eslint-disable-line no-unused-vars
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 app.post('/api/auth/login', authLimiter, wrap(async (req, res) => {
@@ -187,15 +192,17 @@ app.get('/api/users/:id', auth, wrap(async (req, res) => {
 // ── Exams ─────────────────────────────────────────────────────────────────────
 // NOTE: specific routes (/published, /teacher/:id) must come before /:id
 
-app.get('/api/exams', auth, wrap(async (_req, res) => {
+app.get('/api/exams', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(`SELECT ${EXAM_COLS} FROM exams`);
+  if (req.user.role === 'student') rows.forEach(r => { r.questions = stripAnswerKey(r.questions); });
   res.json(rows);
 }));
 
-app.get('/api/exams/published', auth, wrap(async (_req, res) => {
+app.get('/api/exams/published', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT ${EXAM_COLS} FROM exams WHERE status='published'`
   );
+  if (req.user.role === 'student') rows.forEach(r => { r.questions = stripAnswerKey(r.questions); });
   res.json(rows);
 }));
 
@@ -213,6 +220,7 @@ app.get('/api/exams/:id', auth, wrap(async (req, res) => {
     [req.params.id]
   );
   if (!rows.length) return res.status(404).json({ error: 'Exam not found' });
+  if (req.user.role === 'student') rows[0].questions = stripAnswerKey(rows[0].questions);
   res.json(rows[0]);
 }));
 
@@ -308,6 +316,10 @@ app.post('/api/attempts', auth, requireRole('student'), wrap(async (req, res) =>
      RETURNING ${ATTEMPT_COLS}`,
     [id, examId, studentId, JSON.stringify(answers), score, passed, startedAt, tabSwitchCount]
   );
+
+  // Now that the student has submitted, it's safe to reveal the answer key for their own
+  // review screen — this is never persisted to the attempts table, just attached to the response.
+  rows[0].answerKey = questions.map(q => ({ correctOption: q.correctOption ?? null, keywords: q.keywords ?? null }));
 
   // A tab-blur can land during the INSERT's await — re-check before the session is deleted
   // (inside broadcastSubmitted) so that increment isn't silently lost.

@@ -14,9 +14,9 @@ const fmt = (secs) =>
 const isAnswered = (q, a) =>
   q.type === 'open' ? (typeof a === 'string' && a.trim().length > 0) : a !== null;
 
-const openMatches = (q, a) => {
+const openMatches = (keywords, a) => {
   const text = String(a ?? '').toLowerCase();
-  return (q.keywords ?? []).some(kw => text.includes(kw.toLowerCase()));
+  return (keywords ?? []).some(kw => text.includes(kw.toLowerCase()));
 };
 
 const TakeExam = ({ user, examId, onNavigate }) => {
@@ -176,9 +176,10 @@ const TakeExam = ({ user, examId, onNavigate }) => {
         <div className="d-flex flex-column gap-3">
           {exam.questions.map((q, i) => {
             const ans = answers[i];
+            const key = result.answerKey?.[i] ?? {};
 
             if (q.type === 'open') {
-              const correct = openMatches(q, ans);
+              const correct = openMatches(key.keywords, ans);
               return (
                 <div key={q.id} className={`card border-${correct ? 'success' : 'danger'}`}>
                   <div className={`card-header bg-${correct ? 'success' : 'danger'} bg-opacity-10 d-flex justify-content-between`}>
@@ -187,7 +188,7 @@ const TakeExam = ({ user, examId, onNavigate }) => {
                   </div>
                   <div className="card-body small">
                     <p className="mb-1"><strong>Your answer:</strong> {ans || <em className="text-muted">no answer</em>}</p>
-                    <p className="mb-0 text-muted">Keywords: {(q.keywords ?? []).join(', ')}</p>
+                    <p className="mb-0 text-muted">Keywords: {(key.keywords ?? []).join(', ')}</p>
                   </div>
                 </div>
               );
@@ -195,7 +196,7 @@ const TakeExam = ({ user, examId, onNavigate }) => {
 
             // multiple-choice
             const selected = typeof ans === 'number' ? ans : -1;
-            const correct  = q.correctOption;
+            const correct  = key.correctOption;
             const isRight  = selected === correct;
             return (
               <div key={q.id} className={`card border-${isRight ? 'success' : 'danger'}`}>

@@ -144,6 +144,28 @@ describe('TakeExam', () => {
     expect(screen.getAllByText('Unanswered')).toHaveLength(2);
   });
 
+  test('answer review uses the post-submit answerKey, not the pre-submit exam data', async () => {
+    // exam.questions here carries no correctOption/keywords — mirrors what the server now
+    // sends a student before they've submitted (see server.js's stripAnswerKey).
+    const strippedExam = {
+      ...exam,
+      questions: exam.questions.map(({ id, text, options }) => ({ id, text, options })),
+    };
+    Api.getExamById.mockResolvedValue(strippedExam);
+    Api.submitAttempt.mockResolvedValue({
+      score: 50, passed: false,
+      answerKey: [{ correctOption: 1, keywords: null }, { correctOption: 1, keywords: null }],
+    });
+    render(<TakeExam user={user} examId="e1" onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Math Quiz'));
+    fireEvent.click(screen.getByText('4'));  // correct answer to Q1
+    fireEvent.click(screen.getByText('7'));  // wrong answer to Q2 (correct is '6')
+    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    await waitFor(() => screen.getByText(/not passed/i));
+    expect(screen.getAllByText('[Correct answer]').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Your answer/).length).toBeGreaterThan(0);
+  });
+
   test('clears the autosave entry after a successful submission', async () => {
     Api.getExamById.mockResolvedValue(exam);
     Api.submitAttempt.mockResolvedValue({ score: 100, passed: true });

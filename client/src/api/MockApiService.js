@@ -273,7 +273,12 @@ class MockApiService {
       this._attempts.push(attempt);
       Storage.set('db_attempts', this._attempts);
       Logger.info('MockApiService.submitAttempt', { examId: attempt.examId, score, passed });
-      return structuredClone(attempt);
+      // Matches ServerApiService's shape: the answer key is only attached to this response
+      // (never persisted), now that the student has submitted and review is safe to show.
+      return structuredClone({
+        ...attempt,
+        answerKey: exam.questions.map(q => ({ correctOption: q.correctOption ?? null, keywords: q.keywords ?? null })),
+      });
     });
   }
 
