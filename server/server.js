@@ -19,6 +19,8 @@ const PORT = process.env.PORT || 3002;
 
 const EXAM_STATUSES = ['draft', 'published', 'closed'];
 
+// helmet מוסיף כותרות אבטחה בסיסיות (למשל מניעת XSS/clickjacking) לכל תגובה.
+// cors מוגבל במפורש למקור של ה-client בלבד — לא "*" — כדי שאתר זר לא יוכל לקרוא לזה.
 app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json());
@@ -49,9 +51,15 @@ const aiGenerationLimiter = rateLimit({
 });
 
 // Wraps async route handlers so thrown errors reach the error middleware
+// ב-Express, אם פונקציית async זורקת שגיאה (או ה-Promise נדחה), Express לא תופס
+// את זה אוטומטית — הבקשה פשוט "נתקעת". wrap עוטף כל handler כך שכל שגיאה
+// עוברת ל-next(err) ומגיעה ל-error handler המרכזי בסוף הקובץ, במקום לקרוס בשקט.
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next);
 
 // JWT middleware — attaches req.user or returns 401
+// רץ לפני כל route מוגן: שולף את הטוקן מה-header "Authorization: Bearer <token>",
+// מאמת את החתימה שלו מול JWT_SECRET, ואם תקין - שם את התוכן המפוענח (id, role)
+// ב-req.user כדי שה-handlers הבאים בשרשרת ידעו מי המשתמש בלי לשאול שוב את ה-DB.
 const auth = (req, res, next) => {
   const header = req.headers['authorization'];
   const token  = header && header.startsWith('Bearer ') && header.slice(7);
@@ -65,6 +73,9 @@ const auth = (req, res, next) => {
 };
 
 // Role-guard middleware factory — use after auth
+// זו "פונקציה שמייצרת middleware": requireRole('teacher','admin') מחזירה
+// middleware שבודק אם req.user.role (שכבר הוגדר ע"י auth למעלה) נמצא ברשימת
+// התפקידים המותרים. חייבים להשתמש בזה אחרי auth, כי היא תלויה ב-req.user.
 const requireRole = (...roles) => (req, res, next) => {
   if (!roles.includes(req.user.role))
     return res.status(403).json({ error: 'Forbidden: insufficient role' });
@@ -104,6 +115,9 @@ const ATTEMPT_COLS = `
 
 // Strips the answer key (correctOption/keywords) so a student can't read it off an exam
 // they haven't submitted yet — teachers/admins still get the full question data.
+// טכניקה: destructuring עם שמות משתנים שלא בשימוש (correctOption, keywords) פשוט
+// "שולף אותם החוצה" מהאובייקט, ו-...rest מכיל את כל שאר השדות (id, text, options)
+// בלי השניים האלה. זו הדרך הכי קצרה ב-JS ל"מחיקת שדה" מאובייקט בלי לשנות את המקור.
 const stripAnswerKey = (questions) =>
   questions.map(({ correctOption, keywords, ...rest }) => rest); // eslint-disable-line no-unused-vars
 
@@ -116,13 +130,19 @@ app.post('/api/auth/login', authLimiter, wrap(async (req, res) => {
      WHERE username=$1 AND role=$2`,
     [username, role]
   );
+  // הודעת שגיאה גנרית ("Invalid credentials") גם אם המשתמש לא קיים וגם אם הסיסמה
+  // שגויה - כדי לא לחשוף לתוקף אם שם המשתמש בכלל קיים במערכת (user enumeration).
   if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
   const user = rows[0];
+  // bcrypt.compare משווה את הסיסמה שהתקבלה מול ה-hash השמור, בלי לפענח אותו -
+  // הסיסמה המקורית אף פעם לא נשמרת/מושווית ישירות.
   if (!(await bcrypt.compare(password, user.password)))
     return res.status(401).json({ error: 'Invalid credentials' });
   if (user.status === 'pending')
     return res.status(403).json({ error: 'Your teacher account is awaiting admin approval.' });
+  // הטוקן מכיל רק id ו-role - לא סיסמה ולא מידע רגיש - ותקף ל-24 שעות בלבד.
   const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+  // שולפים החוצה status וpassword כדי שלא יחזרו ללקוח בתגובה - _s/_p לא בשימוש בכוונה.
   const { status: _s, password: _p, ...publicUser } = user;
   res.json({ ...publicUser, token });
 }));
@@ -132,6 +152,8 @@ app.post('/api/auth/register', authLimiter, wrap(async (req, res) => {
   const dup = await pool.query('SELECT id FROM users WHERE username=$1', [username]);
   if (dup.rows.length) return res.status(409).json({ error: 'Username already taken' });
   const id           = `u_${Date.now()}`;
+  // מורה שנרשם עצמאית נכנס כ"pending" וממתין לאישור אדמין (ראה /api/admin/teachers/*);
+  // תלמיד מקבל סטטוס "active" מיידית ויכול להתחבר מייד.
   const status       = role === 'teacher' ? 'pending' : 'active';
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const { rows } = await pool.query(
@@ -248,6 +270,10 @@ app.put('/api/exams/:id', auth, requireRole('teacher', 'admin'), wrap(async (req
   // Attempts store answers positionally aligned to the question order at submission time —
   // changing the question list afterward would silently misattribute stored answers to the
   // wrong questions (most visibly in Analytics' per-question difficulty breakdown).
+  // הסבר: attempts.answers הוא מערך שבו answers[0] הוא התשובה לשאלה questions[0],
+  // answers[1] לשאלה questions[1] וכו' - לפי המיקום (אינדקס), לא לפי מזהה שאלה.
+  // אם מורה יחליף/ימחק שאלה אחרי שתלמידים כבר ענו, האינדקסים כבר לא יתאימו,
+  // ולכן חוסמים שינוי שאלות ברגע שיש ולו attempt אחד למבחן הזה.
   const questionsChanged = JSON.stringify(existingRows[0].questions) !== JSON.stringify(questions);
   if (questionsChanged) {
     const { rows: attemptRows } = await pool.query('SELECT 1 FROM attempts WHERE exam_id=$1 LIMIT 1', [req.params.id]);
@@ -295,6 +321,11 @@ app.post('/api/attempts', auth, requireRole('student'), wrap(async (req, res) =>
   if (!exRows.length) return res.status(404).json({ error: 'Exam not found' });
 
   const { questions, passing_score } = exRows[0];
+  // חישוב הציון קורה כאן בשרת (לא בצד לקוח!) - כדי שתלמיד לא יוכל לזייף תשובות
+  // או ציון דרך ה-devtools. שני סוגי שאלות נבדקים אחרת:
+  // - MC (רב-ברירה): תשובה נכונה = בדיוק אותו אינדקס כמו correctOption.
+  // - open (פתוחה): "נכון" אם הטקסט החופשי מכיל לפחות אחת ממילות המפתח
+  //   (case-insensitive) - לא בדיקה מדויקת, אלא זיהוי מונחים.
   const correct = answers.reduce((acc, ans, i) => {
     const q = questions[i];
     if (!q) return acc;
@@ -323,6 +354,9 @@ app.post('/api/attempts', auth, requireRole('student'), wrap(async (req, res) =>
 
   // A tab-blur can land during the INSERT's await — re-check before the session is deleted
   // (inside broadcastSubmitted) so that increment isn't silently lost.
+  // race condition: בין שליחת ה-INSERT ל-DB (await) לבין שהוא חוזר, יכולות לעבור
+  // כמה מילישניות שבהן התלמיד עדיין יכול להחליף טאב ולהעלות tabSwitchCount.
+  // בלי הבדיקה החוזרת הזו, אותה החלפת-טאב "אחרונה" הייתה נעלמת מהתוצאה הסופית.
   const finalTabSwitchCount = monitorBridge.getTabSwitchCount(examId, studentId);
   if (finalTabSwitchCount > tabSwitchCount) {
     await pool.query('UPDATE attempts SET tab_switch_count=$1 WHERE id=$2', [finalTabSwitchCount, id]);
@@ -469,6 +503,10 @@ const QUESTION_GEN_SCHEMA = {
 // The model's output feeds directly into auto-grading (correctOption / keywords),
 // so nothing from it is trusted without validation — malformed items are dropped
 // rather than saved as a broken exam question.
+// עיקרון חשוב: אף פעם לא סומכים "בעיוורון" על תשובת מודל שפה (גם עם structured
+// output) - כאן בודקים כל שדה בנפרד (יש טקסט? יש לפחות 2 אופציות ב-MC? האינדקס
+// של correctOption בטווח החוקי?) ומשליכים שאלה שלא עברה את כל הבדיקות, במקום
+// לתת לה "להישבר" בשקט מאוחר יותר בזמן הבחינה עצמה.
 function sanitizeGeneratedQuestion(q, fallbackTopic) {
   if (!q || typeof q.text !== 'string' || !q.text.trim()) return null;
   const topic = (typeof q.topic === 'string' && q.topic.trim()) || fallbackTopic;
@@ -601,6 +639,10 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// migrate() רץ בכל עליית שרת (למטה, בתוך server.listen). כל פקודה כאן היא
+// "אידמפוטנטית" (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS) - כלומר בטוח להריץ
+// אותה שוב ושוב בלי שתישבר אם העמודה/טבלה כבר קיימת. זו הדרך הפשוטה של הפרויקט
+// ל"מיגרציות סכימה" בלי כלי migration ייעודי כמו Flyway/Prisma.
 async function migrate() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS question_bank (

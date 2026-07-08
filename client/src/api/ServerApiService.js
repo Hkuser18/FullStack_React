@@ -9,13 +9,19 @@ export const saveToken  = token => localStorage.setItem(TOKEN_KEY, token);
 export const clearToken = ()    => localStorage.removeItem(TOKEN_KEY);
 const getToken          = ()    => localStorage.getItem(TOKEN_KEY);
 
+// req() הוא ה"מנוע" המשותף שכל מתודה למטה משתמשת בו - כך שלוגיקת האימות
+// וטיפול-השגיאות נכתבת פעם אחת בלבד ולא מועתקת בכל קריאת fetch בנפרד.
 async function req(method, path, body) {
-  const token = getToken();
+  const token = getToken(); // הטוקן שנשמר ב-localStorage אחרי login מוצלח
   const headers = { 'Content-Type': 'application/json' };
+  // אם יש טוקן - מצרפים אותו כ-Bearer token; השרת (auth middleware ב-server.js)
+  // יאמת אותו בכל בקשה מוגנת. אם אין (למשל בקריאת login עצמה) - פשוט לא נשלח.
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const opts = { method, headers };
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch(`${API_BASE}/api${path}`, opts);
+  // fetch לא זורק שגיאה אוטומטית על סטטוס 4xx/5xx (רק על כשל רשת) - res.ok
+  // הוא הדרך הנכונה לבדוק הצלחה, ואז זורקים ידנית עם הודעת השגיאה מהשרת.
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? res.statusText);

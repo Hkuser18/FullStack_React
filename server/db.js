@@ -1,5 +1,8 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
+// dotenv.config() טוען משתני סביבה מקובץ .env לתוך process.env - אבל רק אם המשתנה
+// עוד לא קיים שם. אם מריצים את השרת עם DATABASE_URL שהוגדר ידנית מבחוץ (לדוגמה
+// לבדיקות מול DB זמני), הערך החיצוני "מנצח" ולא נדרס ע"י מה שכתוב בקובץ .env.
 dotenv.config();
 const { Pool } = pg;
 
@@ -8,6 +11,8 @@ const connectionString = process.env.DATABASE_URL || 'postgres://postgres:postgr
 // Render (and most other hosted Postgres) requires SSL; local/Docker Compose Postgres doesn't
 // support it at all. DATABASE_SSL lets an environment (e.g. docker-compose.yml) override the
 // hostname-based guess explicitly instead of us trying to enumerate every "this is local" host.
+// כלומר: אם מתחברים ל-localhost מניחים סביבת פיתוח מקומית (בלי SSL), אחרת מניחים
+// שירות ענן מרוחק (עם SSL) - ניתן לעקוף את הניחוש הזה במפורש עם DATABASE_SSL.
 const useSSL = process.env.DATABASE_SSL
   ? process.env.DATABASE_SSL === 'true'
   : !connectionString.includes('localhost');
@@ -26,6 +31,10 @@ pool.query('SELECT NOW()', (err, res) => {
 });
 
 // ── Seed data (used by /api/db/reset) ─────────────────────────────────────────
+// הנתונים למטה הם "דאטה לדוגמה" קבועה - משמשים גם את seed.js (מילוי DB ראשוני
+// בפריסה חדשה) וגם את /api/db/reset בשרת (איפוס ל-DB נקי בזמן פיתוח/דמו).
+// שימו לב: הסיסמאות כאן ('pass123') הן טקסט גלוי רק במשתנה הזה - בפועל הן
+// עוברות דרך bcrypt.hash() לפני שהן נכתבות ל-DB, אף פעם לא נשמרות כמו שהן.
 
 export const SEED_USERS = [
   { id: 'u0', username: 'admin',    password: 'pass123', role: 'admin',   name: 'Admin',       status: 'active' },

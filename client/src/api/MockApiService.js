@@ -11,6 +11,9 @@ import Config    from '../services/ConfigService';
 export const ExamStatus = { DRAFT: 'draft', PUBLISHED: 'published', CLOSED: 'closed' };
 
 class MockApiService {
+  // singleton pattern: ה-constructor בודק אם כבר קיים מופע קודם (_instance) ואם
+  // כן מחזיר אותו במקום ליצור חדש - כך שכל הקומפוננטות באפליקציה חולקות אותו
+  // "מסד נתונים" בזיכרון, במקום שכל import ייצור עותק נפרד ולא מסונכרן.
   constructor() {
     if (MockApiService._instance) return MockApiService._instance;
     this._load();
@@ -19,6 +22,9 @@ class MockApiService {
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
+  // טוען מ-localStorage אם יש נתונים שמורים משימוש קודם, אחרת מתחיל מנתוני
+  // הדוגמה (SEED_*). structuredClone יוצר עותק עמוק (deep copy) כדי שעריכות
+  // על this._exams לא ישנו בטעות את מערך ה-SEED_EXAMS המקורי המיובא.
   _load() {
     this._users    = Storage.get('db_users',    null) ?? structuredClone(SEED_USERS);
     this._exams    = Storage.get('db_exams',    null) ?? structuredClone(SEED_EXAMS);
@@ -29,6 +35,8 @@ class MockApiService {
     });
   }
 
+  // אחרי כל שינוי (הוספה/עדכון/מחיקה) שומרים את כל ה"טבלאות" מחדש ל-localStorage,
+  // כך שהנתונים שורדים ריענון דף (אבל נעלמים אם המשתמש מנקה את אחסון הדפדפן).
   _persist() {
     Storage.set('db_users',     this._users);
     Storage.set('db_exams',     this._exams);
@@ -37,6 +45,9 @@ class MockApiService {
   }
 
   // Wraps sync fn in a delayed Promise, matching a real API feel
+  // כל מתודה למטה עובדת בפועל בצורה סינכרונית (על מערכים בזיכרון), אבל עוטפים
+  // אותה ב-Promise + setTimeout מלאכותי כדי לדמות השהיית רשת אמיתית - כך שקוד
+  // שקורא ל-Api.getExams() מתנהג אותו דבר בין אם מדובר במוק ובין אם בשרת אמיתי.
   _async(fn) {
     return new Promise((resolve, reject) =>
       setTimeout(() => { try { resolve(fn()); } catch (e) { reject(e); } },
@@ -151,6 +162,9 @@ class MockApiService {
           throw new Error('Cannot change questions after students have already submitted attempts.');
       }
       // Prevent overwriting id, status, createdBy via updates
+      // אותה טכניקת destructuring כמו ב-stripAnswerKey בשרת: "שולפים החוצה" שדות
+      // שאסור שיגיעו מבחוץ דרך הטופס (id/status/createdBy/createdAt נקבעים רק
+      // ע"י המערכת עצמה), ו-safe מכיל רק את מה שמותר למשתמש לעדכן.
       const { id: _id, status, createdBy, createdAt, ...safe } = updates; // eslint-disable-line no-unused-vars
       this._exams[idx] = { ...this._exams[idx], ...safe };
       Storage.set('db_exams', this._exams);
@@ -251,6 +265,8 @@ class MockApiService {
       const exam = this._exams.find(e => e.id === attemptData.examId);
       if (!exam) throw new Error('Exam not found');
 
+      // אותו אלגוריתם ציונים בדיוק כמו ב-server.js (POST /api/attempts) - חייבים
+      // לשמור על שני המימושים מסונכרנים ידנית, כי אין קוד משותף בין client ל-server.
       const correct = attemptData.answers.reduce((acc, ans, i) => {
         const q = exam.questions[i];
         if (!q) return acc;
