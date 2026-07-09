@@ -2,14 +2,33 @@
 
 A full-stack online exam management system built for the Tel-Hai College FullStack course. Teachers create and publish exams, students take them and get auto-graded results, and an admin approves new teacher accounts.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for diagrams (ER diagram, use cases, component hierarchy, auth sequence).
+## Live Demo
+
+| | |
+|---|---|
+| **GitHub** | https://github.com/Hkuser18/FullStack_React (this repo, branch `dev`) |
+| **Client (live app)** | https://examapp-client.onrender.com |
+| **Server (API)** | https://examsapp-server.onrender.com |
+
+Demo accounts — see [Demo Accounts](#demo-accounts) below.
+
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System overview, client/server architecture, ER diagram + JSON models, OOP class diagram, component hierarchy, use cases, 3 sequence diagrams, exam status flow |
+| [`docs/API.md`](docs/API.md) | Full REST endpoint reference + Socket.IO event reference |
+| [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | Semester milestones, branch strategy, CI/CD pipeline, Docker, testing strategy, logging |
+| [`docs/QUESTION_IMPORT_FORMAT.md`](docs/QUESTION_IMPORT_FORMAT.md) | CSV format for bulk question import/export |
 
 ## Features
 
 - **Auth** — JWT login/register, bcrypt-hashed passwords, role-based access (admin / teacher / student)
 - **Admin** — approve or reject pending teacher registrations
-- **Teacher** — create/edit/delete exams, build a reusable question bank (multiple-choice + open-ended), publish/close/reopen exams, optional exam scheduling window, view student results with per-exam stats
-- **Student** — browse published exams, take an exam under a countdown timer, auto-graded submission (exact match for multiple-choice, keyword match for open-ended), view score history and answer review
+- **Teacher** — create/edit/delete exams, build a reusable question bank (multiple-choice + open-ended), publish/close/reopen exams, optional exam scheduling window, view student results with per-exam stats and manual grade override
+- **Student** — browse published exams, take an exam under a countdown timer with client-side auto-save, auto-graded submission (exact match for multiple-choice, keyword match for open-ended), view score history and answer review
+- **Live Monitor** — real-time, Socket.IO-powered view of who's currently taking a published exam, their live per-question progress, a tab-switch/suspicious-activity signal, and instant submit notifications (with a 30s disconnect grace period so a page reload isn't mistaken for "left")
+- **Analytics** — cross-exam teacher dashboard: aggregate stats, a per-exam breakdown table with CSV export, a score-distribution chart, and per-question difficulty ranking
 - **Dual API layer** — the client can run against a real Express/PostgreSQL backend or a localStorage-backed mock, toggled by an env var (useful for frontend-only development)
 - **CSV question import/export** — bulk-load or export question bank entries; see [`docs/QUESTION_IMPORT_FORMAT.md`](docs/QUESTION_IMPORT_FORMAT.md)
 - **AI-generated questions** — teachers can generate multiple-choice/open questions from a topic prompt (Gemini API), review a preview, and add selected ones to the question bank. Optional — set `GEMINI_API_KEY` to enable; the rest of the app works without it
@@ -19,10 +38,11 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for diagrams (ER diagram, use
 | Layer | Technology |
 |---|---|
 | Client | React 19 + Vite, Bootstrap 5, Vitest + Testing Library |
-| Server | Express (ESM), JWT (`jsonwebtoken`), `bcryptjs`, `cors` |
+| Server | Express (ESM), JWT (`jsonwebtoken`), `bcryptjs`, `helmet` + `express-rate-limit`, `cors` |
+| Real-time | Socket.IO (server + `socket.io-client`) — powers Live Monitor |
 | Database | PostgreSQL (`pg`) |
 | AI | Google Gemini API (`@google/genai`) — optional, free-tier key |
-| CI | GitHub Actions |
+| CI | GitHub Actions (client tests+build, server smoke test against real Postgres) |
 | Containerization | Docker + Docker Compose |
 | Deployment | Render (web service + static site + managed Postgres) |
 
