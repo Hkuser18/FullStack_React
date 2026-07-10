@@ -142,6 +142,34 @@ describe('MockApiService', () => {
     expect(attempt.score).toBe(0);
   });
 
+  test('submitAttempt flags plagiarism on open questions with high similarity', async () => {
+    const exam = await Api.createExam({
+      title: 'Plagiarism Test Exam',
+      questions: [{ type: 'open', text: 'Explain stuff', keywords: ['stuff'] }]
+    });
+
+    // First student submits an answer
+    const ans1 = "this is a very specific and long enough answer";
+    await Api.submitAttempt({
+      examId: exam.id, studentId: 'u_1', answers: [ans1], startedAt: new Date().toISOString()
+    });
+
+    // Second student submits the exact same answer
+    const attempt2 = await Api.submitAttempt({
+      examId: exam.id, studentId: 'u_2', answers: [ans1], startedAt: new Date().toISOString()
+    });
+    expect(attempt2.cheatFlags).toBeDefined();
+    expect(attempt2.cheatFlags.length).toBe(1);
+    expect(attempt2.cheatFlags[0].similarity).toBeGreaterThanOrEqual(80);
+
+    // Third student submits a completely different answer
+    const attempt3 = await Api.submitAttempt({
+      examId: exam.id, studentId: 'u_3', answers: ["a totally unrelated small thing"], startedAt: new Date().toISOString()
+    });
+    expect(attempt3.cheatFlags.length).toBe(0);
+  });
+
+
   // ── Attempts ──────────────────────────────────────────────────────────────
 
   test('hasAttempted returns false before any submission', async () => {
