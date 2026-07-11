@@ -1,6 +1,11 @@
 # Architecture & Diagrams
 
-## System Overview
+## System Overview (Client / Server / DB / Services)
+
+The system is split into three main layers: **Client**, **Server**, and **Database**.
+- **Data Flow**: The user interacts with the **React Client** components. These components delegate business logic and data fetching to the **Client Services** and **API Layer**. The API layer sends HTTP/JSON requests to the **Express Server**. The Server routes requests, checks JWT authorization via middleware, performs business logic, and executes SQL queries against the **PostgreSQL Database**. The data is then serialized to JSON and sent back to the Client.
+- **Data Storage**: User credentials, exams, questions, and attempts are persisted securely in the PostgreSQL database.
+- **Interface**: The Client talks to the Server via a RESTful API (JSON over HTTPS).
 
 ```mermaid
 flowchart LR
@@ -141,7 +146,60 @@ flowchart TB
 
 Role → default landing page: `admin` → Admin Panel, `teacher` → My Exams, `student` → Available Exams.
 
-## Auth Sequence
+## OOP UML Diagram (Client Services)
+
+The client uses several Singleton services to manage state, configuration, and API communication in an Object-Oriented manner.
+
+```mermaid
+classDiagram
+    class AuthService {
+        -_instance: AuthService
+        +login(username, password, role)
+        +logout()
+        +register(data)
+        +getToken()
+        +getUser()
+    }
+    class ConfigService {
+        -_instance: ConfigService
+        +get(key)
+        +set(key, val)
+    }
+    class LoggerService {
+        -_instance: LoggerService
+        +debug(msg)
+        +info(msg)
+        +warn(msg)
+        +error(msg)
+    }
+    class StorageService {
+        -_instance: StorageService
+        +getItem(key)
+        +setItem(key, val)
+        +removeItem(key)
+    }
+    class NotifyService {
+        -_instance: NotifyService
+        +subscribe(callback)
+        +toast(message, type)
+    }
+    class MockApiService {
+        -_instance: MockApiService
+        +getExams()
+        +submitAttempt()
+    }
+    class ServerApiService {
+        -_instance: ServerApiService
+        +getExams()
+        +submitAttempt()
+    }
+
+    AuthService ..> ServerApiService : uses for auth calls
+```
+
+## Sequence Diagrams (Main Scenarios)
+
+### 1. Authentication (Login) Sequence
 
 ```mermaid
 sequenceDiagram
@@ -167,6 +225,59 @@ sequenceDiagram
         S->>S: auth middleware verifies JWT
         S->>S: requireRole(...) checks req.user.role
     end
+```
+
+### 2. Teacher Creates Exam Sequence
+
+```mermaid
+sequenceDiagram
+    participant T as Teacher (Client)
+    participant API as API Layer
+    participant S as Express Server
+    participant DB as PostgreSQL
+
+    T->>API: POST /api/exams (title, description, duration)
+    API->>S: HTTP POST (Bearer JWT)
+    S->>S: Validate Token & requireRole('teacher')
+    S->>DB: INSERT INTO exams (status='draft')
+    DB-->>S: Returns new exam ID
+    S-->>API: 201 Created (exam)
+    API-->>T: Updates UI (ExamForm)
+    
+    T->>API: PUT /api/exams/:id (add questions)
+    API->>S: HTTP PUT (Bearer JWT)
+    S->>DB: UPDATE exams SET questions = [...]
+    DB-->>S: Success
+    S-->>API: 200 OK
+    API-->>T: Exam saved as Draft
+```
+
+### 3. Student Takes Exam Sequence
+
+```mermaid
+sequenceDiagram
+    participant St as Student (Client)
+    participant API as API Layer
+    participant S as Express Server
+    participant DB as PostgreSQL
+
+    St->>API: GET /api/exams/:id
+    API->>S: HTTP GET (Bearer JWT)
+    S->>S: Validate Token & requireRole('student')
+    S->>DB: SELECT exam WHERE id AND status='published'
+    DB-->>S: Returns exam data (without correct answers)
+    S-->>API: 200 OK (exam)
+    API-->>St: Renders TakeExam component with Timer
+    
+    St->>API: POST /api/attempts (exam_id, answers array)
+    API->>S: HTTP POST (Bearer JWT)
+    S->>DB: SELECT exam (with correct answers)
+    DB-->>S: Exam data
+    S->>S: Auto-grade answers (calculate score)
+    S->>DB: INSERT INTO attempts (student_id, answers, score)
+    DB-->>S: Returns attempt ID
+    S-->>API: 201 Created (score, results)
+    API-->>St: Renders MyResults with feedback
 ```
 
 ## Exam Status Flow
