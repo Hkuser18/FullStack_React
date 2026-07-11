@@ -91,7 +91,7 @@ const LoginPage = ({ onLogin, onGoToRegister }) => {
             )}
 
             <button type="submit" className="btn-primary-app w-100" disabled={loading} style={{ width: '100%' }}>
-              {loading ? 'Logging in…' : `Login as ${role === 'teacher' ? 'Teacher' : 'Student'}`}
+              {loading ? 'Logging in…' : `Login as ${role.charAt(0).toUpperCase() + role.slice(1)}`}
             </button>
           </form>
 

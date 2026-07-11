@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 import LoginPage    from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
@@ -11,38 +11,66 @@ import ExamList       from './components/teacher/ExamList';
 import ExamForm       from './components/teacher/ExamForm';
 import StudentResults from './components/teacher/StudentResults';
 import QuestionBank   from './components/teacher/QuestionBank';
+import LiveMonitor    from './components/teacher/LiveMonitor';
+import Analytics      from './components/teacher/Analytics';
 import AdminPanel     from './components/admin/AdminPanel';
 
 import AvailableExams from './components/student/AvailableExams';
 import TakeExam       from './components/student/TakeExam';
 import MyResults      from './components/student/MyResults';
 
-import Auth   from './services/AuthService';
-import Logger from './services/LoggerService';
-import Notify from './services/NotifyService';
+import Auth    from './services/AuthService';
+import Logger  from './services/LoggerService';
+import Notify  from './services/NotifyService';
+import Storage from './services/StorageService';
 import './App.css';
 
 const DEFAULT_PAGE = { teacher: 'my-exams', student: 'available-exams', admin: 'admin-panel' };
+const PAGE_KEY = 'ui_page';
 
 function App() {
   const [user,        setUser]        = useState(() => Auth.getCurrentUser());
   const [screen,      setScreen]      = useState('login');
   const [activePage,  setPage]        = useState(() => {
     const u = Auth.getCurrentUser();
-    return u ? DEFAULT_PAGE[u.role] : null;
+    if (!u) return null;
+    return Storage.get(PAGE_KEY)?.activePage ?? DEFAULT_PAGE[u.role];
   });
-  const [pageParams,  setParams]      = useState({});
+  const [pageParams,  setParams]      = useState(() => {
+    const u = Auth.getCurrentUser();
+    return u ? Storage.get(PAGE_KEY)?.pageParams ?? {} : {};
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // auth_token is a single shared localStorage key — logging into a different account
+  // in another tab silently overwrites it. This tab's React state (and every UI element
+  // built from it) would keep showing the OLD user while every new request actually goes
+  // out with the NEW tab's token, since ServerApiService reads localStorage fresh on each
+  // call. The 'storage' event only fires for changes made in other tabs/windows, so this
+  // reloads to resync as soon as that happens, rather than silently sending mismatched
+  // requests that fail with a confusing role/permission error.
+  useEffect(() => {
+    const onStorageChange = (e) => {
+      if (e.key === 'auth_token') window.location.reload();
+    };
+    window.addEventListener('storage', onStorageChange);
+    return () => window.removeEventListener('storage', onStorageChange);
+  }, []);
+
+  // Persists the current page across a hard refresh — most relevant while
+  // mid-exam, where the answers themselves are already auto-saved separately.
   const handleNavigate = (page, params = {}) => {
     setPage(page);
     setParams(params);
     setSidebarOpen(false);
+    Storage.set(PAGE_KEY, { activePage: page, pageParams: params });
   };
 
   const handleLogin = (loggedInUser) => {
     setUser(loggedInUser);
-    setPage(DEFAULT_PAGE[loggedInUser.role]);
+    const page = DEFAULT_PAGE[loggedInUser.role];
+    setPage(page);
+    Storage.set(PAGE_KEY, { activePage: page, pageParams: {} });
     Logger.info('App: user logged in', { role: loggedInUser.role });
   };
 
@@ -54,6 +82,7 @@ function App() {
     setPage(null);
     setParams({});
     setSidebarOpen(false);
+    Storage.remove(PAGE_KEY);
     Logger.info('App: user logged out');
   };
 
@@ -84,6 +113,8 @@ function App() {
       // Teacher pages
       case 'my-exams':
         return <ExamList user={user} onNavigate={handleNavigate} />;
+      case 'live-monitor':
+        return <LiveMonitor user={user} onNavigate={handleNavigate} />;
       case 'create-exam':
         return <ExamForm user={user} onNavigate={handleNavigate} />;
       case 'edit-exam':
@@ -92,6 +123,8 @@ function App() {
         return <StudentResults user={user} examId={pageParams.examId} onNavigate={handleNavigate} />;
       case 'question-bank':
         return <QuestionBank user={user} onNavigate={handleNavigate} />;
+      case 'analytics':
+        return <Analytics user={user} onNavigate={handleNavigate} />;
 
       // Student pages
       case 'available-exams':
@@ -112,7 +145,7 @@ function App() {
 
   // ── Authenticated layout ──────────────────────────────────────────────────
   return (
-    <div className="app-root">
+    <div className="app-root d-flex flex-column w-100 overflow-hidden">
       <NotifyToast />
       <NavBar
         user={user}
@@ -121,7 +154,7 @@ function App() {
         sidebarOpen={sidebarOpen}
       />
 
-      <div className="app-body">
+      <div className="app-body d-flex flex-grow-1 overflow-hidden position-relative">
         {sidebarOpen && (
           <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
         )}
@@ -131,7 +164,7 @@ function App() {
           onNavigate={handleNavigate}
           isOpen={sidebarOpen}
         />
-        <main className="app-main animate-fade-in">
+        <main className="app-main flex-grow-1 overflow-auto animate-fade-in">
           {renderPage()}
         </main>
       </div>

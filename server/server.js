@@ -1,7 +1,16 @@
+import http from 'http';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import { Server } from 'socket.io';
+import { GoogleGenAI } from '@google/genai';
 import pool, { SEED_USERS, SEED_EXAMS, SEED_ATTEMPTS, SEED_QUESTION_BANK } from './db.js';
+import { registerSocketHandlers } from './socket.js';
+
+const BCRYPT_ROUNDS = 10;
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret';
 
@@ -10,13 +19,47 @@ const PORT = process.env.PORT || 3002;
 
 const EXAM_STATUSES = ['draft', 'published', 'closed'];
 
+// helmet מוסיף כותרות אבטחה בסיסיות (למשל מניעת XSS/clickjacking) לכל תגובה.
+// cors מוגבל במפורש למקור של ה-client בלבד — לא "*" — כדי שאתר זר לא יוכל לקרוא לזה.
+app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json());
 
+// Live Monitor real-time layer — shares the same port/CORS origin as the REST API
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' },
+});
+const monitorBridge = registerSocketHandlers(io, pool);
+
+// Throttles brute-force login/register attempts per IP
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, please try again later.' },
+});
+
+// AI question generation calls a paid external API — throttle harder than normal routes
+const aiGenerationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many AI generation requests, please try again later.' },
+});
+
 // Wraps async route handlers so thrown errors reach the error middleware
+// ב-Express, אם פונקציית async זורקת שגיאה (או ה-Promise נדחה), Express לא תופס
+// את זה אוטומטית — הבקשה פשוט "נתקעת". wrap עוטף כל handler כך שכל שגיאה
+// עוברת ל-next(err) ומגיעה ל-error handler המרכזי בסוף הקובץ, במקום לקרוס בשקט.
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next);
 
 // JWT middleware — attaches req.user or returns 401
+// רץ לפני כל route מוגן: שולף את הטוקן מה-header "Authorization: Bearer <token>",
+// מאמת את החתימה שלו מול JWT_SECRET, ואם תקין - שם את התוכן המפוענח (id, role)
+// ב-req.user כדי שה-handlers הבאים בשרשרת ידעו מי המשתמש בלי לשאול שוב את ה-DB.
 const auth = (req, res, next) => {
   const header = req.headers['authorization'];
   const token  = header && header.startsWith('Bearer ') && header.slice(7);
@@ -30,6 +73,9 @@ const auth = (req, res, next) => {
 };
 
 // Role-guard middleware factory — use after auth
+// זו "פונקציה שמייצרת middleware": requireRole('teacher','admin') מחזירה
+// middleware שבודק אם req.user.role (שכבר הוגדר ע"י auth למעלה) נמצא ברשימת
+// התפקידים המותרים. חייבים להשתמש בזה אחרי auth, כי היא תלויה ב-req.user.
 const requireRole = (...roles) => (req, res, next) => {
   if (!roles.includes(req.user.role))
     return res.status(403).json({ error: 'Forbidden: insufficient role' });
@@ -61,40 +107,60 @@ const ATTEMPT_COLS = `
   id,
   exam_id      AS "examId",
   student_id   AS "studentId",
-  answers, score, passed,
+  answers, score, passed, feedback,
   started_at   AS "startedAt",
-  submitted_at AS "submittedAt"
+  submitted_at AS "submittedAt",
+  tab_switch_count AS "tabSwitchCount"
 `;
+
+// Strips the answer key (correctOption/keywords) so a student can't read it off an exam
+// they haven't submitted yet — teachers/admins still get the full question data.
+// טכניקה: destructuring עם שמות משתנים שלא בשימוש (correctOption, keywords) פשוט
+// "שולף אותם החוצה" מהאובייקט, ו-...rest מכיל את כל שאר השדות (id, text, options)
+// בלי השניים האלה. זו הדרך הכי קצרה ב-JS ל"מחיקת שדה" מאובייקט בלי לשנות את המקור.
+const stripAnswerKey = (questions) =>
+  questions.map(({ correctOption, keywords, ...rest }) => rest); // eslint-disable-line no-unused-vars
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-app.post('/api/auth/login', wrap(async (req, res) => {
+app.post('/api/auth/login', authLimiter, wrap(async (req, res) => {
   const { username, password, role } = req.body;
   const { rows } = await pool.query(
-    `SELECT id, username, role, name, status FROM users
-     WHERE username=$1 AND password=$2 AND role=$3`,
-    [username, password, role]
+    `SELECT id, username, password, role, name, status FROM users
+     WHERE username=$1 AND role=$2`,
+    [username, role]
   );
+  // הודעת שגיאה גנרית ("Invalid credentials") גם אם המשתמש לא קיים וגם אם הסיסמה
+  // שגויה - כדי לא לחשוף לתוקף אם שם המשתמש בכלל קיים במערכת (user enumeration).
   if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
   const user = rows[0];
+  // bcrypt.compare משווה את הסיסמה שהתקבלה מול ה-hash השמור, בלי לפענח אותו -
+  // הסיסמה המקורית אף פעם לא נשמרת/מושווית ישירות.
+  if (!(await bcrypt.compare(password, user.password)))
+    return res.status(401).json({ error: 'Invalid credentials' });
   if (user.status === 'pending')
     return res.status(403).json({ error: 'Your teacher account is awaiting admin approval.' });
+  // הטוקן מכיל רק id ו-role - לא סיסמה ולא מידע רגיש - ותקף ל-24 שעות בלבד.
   const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-  const { status: _s, ...publicUser } = user;
+  // שולפים החוצה status וpassword כדי שלא יחזרו ללקוח בתגובה - _s/_p לא בשימוש בכוונה.
+  const { status: _s, password: _p, ...publicUser } = user;
   res.json({ ...publicUser, token });
 }));
 
-app.post('/api/auth/register', wrap(async (req, res) => {
+app.post('/api/auth/register', authLimiter, wrap(async (req, res) => {
   const { username, password, name, role } = req.body;
   const dup = await pool.query('SELECT id FROM users WHERE username=$1', [username]);
   if (dup.rows.length) return res.status(409).json({ error: 'Username already taken' });
-  const id     = `u_${Date.now()}`;
-  const status = role === 'teacher' ? 'pending' : 'active';
+  const id           = `u_${Date.now()}`;
+  // מורה שנרשם עצמאית נכנס כ"pending" וממתין לאישור אדמין (ראה /api/admin/teachers/*);
+  // תלמיד מקבל סטטוס "active" מיידית ויכול להתחבר מייד.
+  const status       = role === 'teacher' ? 'pending' : 'active';
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const { rows } = await pool.query(
     `INSERT INTO users (id, username, password, role, name, status)
      VALUES ($1,$2,$3,$4,$5,$6)
      RETURNING id, username, role, name`,
-    [id, username, password, role, name, status]
+    [id, username, passwordHash, role, name, status]
   );
   const msg = role === 'teacher'
     ? 'Teacher account created — awaiting admin approval before you can log in.'
@@ -148,15 +214,17 @@ app.get('/api/users/:id', auth, wrap(async (req, res) => {
 // ── Exams ─────────────────────────────────────────────────────────────────────
 // NOTE: specific routes (/published, /teacher/:id) must come before /:id
 
-app.get('/api/exams', auth, wrap(async (_req, res) => {
+app.get('/api/exams', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(`SELECT ${EXAM_COLS} FROM exams`);
+  if (req.user.role === 'student') rows.forEach(r => { r.questions = stripAnswerKey(r.questions); });
   res.json(rows);
 }));
 
-app.get('/api/exams/published', auth, wrap(async (_req, res) => {
+app.get('/api/exams/published', auth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT ${EXAM_COLS} FROM exams WHERE status='published'`
   );
+  if (req.user.role === 'student') rows.forEach(r => { r.questions = stripAnswerKey(r.questions); });
   res.json(rows);
 }));
 
@@ -174,6 +242,7 @@ app.get('/api/exams/:id', auth, wrap(async (req, res) => {
     [req.params.id]
   );
   if (!rows.length) return res.status(404).json({ error: 'Exam not found' });
+  if (req.user.role === 'student') rows[0].questions = stripAnswerKey(rows[0].questions);
   res.json(rows[0]);
 }));
 
@@ -194,6 +263,24 @@ app.post('/api/exams', auth, requireRole('teacher', 'admin'), wrap(async (req, r
 
 app.put('/api/exams/:id', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
   const { title, description, duration, passingScore, questions, startDate = null, endDate = null } = req.body;
+
+  const { rows: existingRows } = await pool.query('SELECT questions FROM exams WHERE id=$1', [req.params.id]);
+  if (!existingRows.length) return res.status(404).json({ error: 'Exam not found' });
+
+  // Attempts store answers positionally aligned to the question order at submission time —
+  // changing the question list afterward would silently misattribute stored answers to the
+  // wrong questions (most visibly in Analytics' per-question difficulty breakdown).
+  // הסבר: attempts.answers הוא מערך שבו answers[0] הוא התשובה לשאלה questions[0],
+  // answers[1] לשאלה questions[1] וכו' - לפי המיקום (אינדקס), לא לפי מזהה שאלה.
+  // אם מורה יחליף/ימחק שאלה אחרי שתלמידים כבר ענו, האינדקסים כבר לא יתאימו,
+  // ולכן חוסמים שינוי שאלות ברגע שיש ולו attempt אחד למבחן הזה.
+  const questionsChanged = JSON.stringify(existingRows[0].questions) !== JSON.stringify(questions);
+  if (questionsChanged) {
+    const { rows: attemptRows } = await pool.query('SELECT 1 FROM attempts WHERE exam_id=$1 LIMIT 1', [req.params.id]);
+    if (attemptRows.length)
+      return res.status(409).json({ error: 'Cannot change questions after students have already submitted attempts.' });
+  }
+
   const { rows } = await pool.query(
     `UPDATE exams
      SET title=$1, description=$2, duration=$3, passing_score=$4, questions=$5, start_date=$6, end_date=$7
@@ -201,7 +288,6 @@ app.put('/api/exams/:id', auth, requireRole('teacher', 'admin'), wrap(async (req
      RETURNING ${EXAM_COLS}`,
     [title, description, duration, passingScore, JSON.stringify(questions), startDate, endDate, req.params.id]
   );
-  if (!rows.length) return res.status(404).json({ error: 'Exam not found' });
   res.json(rows[0]);
 }));
 
@@ -235,6 +321,11 @@ app.post('/api/attempts', auth, requireRole('student'), wrap(async (req, res) =>
   if (!exRows.length) return res.status(404).json({ error: 'Exam not found' });
 
   const { questions, passing_score } = exRows[0];
+  // חישוב הציון קורה כאן בשרת (לא בצד לקוח!) - כדי שתלמיד לא יוכל לזייף תשובות
+  // או ציון דרך ה-devtools. שני סוגי שאלות נבדקים אחרת:
+  // - MC (רב-ברירה): תשובה נכונה = בדיוק אותו אינדקס כמו correctOption.
+  // - open (פתוחה): "נכון" אם הטקסט החופשי מכיל לפחות אחת ממילות המפתח
+  //   (case-insensitive) - לא בדיקה מדויקת, אלא זיהוי מונחים.
   const correct = answers.reduce((acc, ans, i) => {
     const q = questions[i];
     if (!q) return acc;
@@ -247,17 +338,39 @@ app.post('/api/attempts', auth, requireRole('student'), wrap(async (req, res) =>
   const score  = Math.round((correct / questions.length) * 100);
   const passed = score >= passing_score;
 
+  const tabSwitchCount = monitorBridge.getTabSwitchCount(examId, studentId);
+
   const id = `a_${Date.now()}`;
   const { rows } = await pool.query(
-    `INSERT INTO attempts (id, exam_id, student_id, answers, score, passed, started_at, submitted_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+    `INSERT INTO attempts (id, exam_id, student_id, answers, score, passed, started_at, submitted_at, tab_switch_count)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8)
      RETURNING ${ATTEMPT_COLS}`,
-    [id, examId, studentId, JSON.stringify(answers), score, passed, startedAt]
+    [id, examId, studentId, JSON.stringify(answers), score, passed, startedAt, tabSwitchCount]
   );
+
+  // Now that the student has submitted, it's safe to reveal the answer key for their own
+  // review screen — this is never persisted to the attempts table, just attached to the response.
+  rows[0].answerKey = questions.map(q => ({ correctOption: q.correctOption ?? null, keywords: q.keywords ?? null }));
+
+  // A tab-blur can land during the INSERT's await — re-check before the session is deleted
+  // (inside broadcastSubmitted) so that increment isn't silently lost.
+  // race condition: בין שליחת ה-INSERT ל-DB (await) לבין שהוא חוזר, יכולות לעבור
+  // כמה מילישניות שבהן התלמיד עדיין יכול להחליף טאב ולהעלות tabSwitchCount.
+  // בלי הבדיקה החוזרת הזו, אותה החלפת-טאב "אחרונה" הייתה נעלמת מהתוצאה הסופית.
+  const finalTabSwitchCount = monitorBridge.getTabSwitchCount(examId, studentId);
+  if (finalTabSwitchCount > tabSwitchCount) {
+    await pool.query('UPDATE attempts SET tab_switch_count=$1 WHERE id=$2', [finalTabSwitchCount, id]);
+    rows[0].tabSwitchCount = finalTabSwitchCount;
+  }
+
+  monitorBridge.broadcastSubmitted(examId, studentId, rows[0]);
   res.status(201).json(rows[0]);
 }));
 
+// Students can only fetch their own history; admins can fetch anyone's.
 app.get('/api/attempts/student/:studentId', auth, wrap(async (req, res) => {
+  if (req.user.role !== 'admin' && req.user.id !== req.params.studentId)
+    return res.status(403).json({ error: 'Forbidden: not your attempt history' });
   const { rows } = await pool.query(
     `SELECT ${ATTEMPT_COLS} FROM attempts WHERE student_id=$1`,
     [req.params.studentId]
@@ -265,7 +378,13 @@ app.get('/api/attempts/student/:studentId', auth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.get('/api/attempts/exam/:examId', auth, wrap(async (req, res) => {
+// Teachers can only fetch attempts for exams they own; admins can fetch any exam's.
+app.get('/api/attempts/exam/:examId', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
+  if (req.user.role === 'teacher') {
+    const { rows: examRows } = await pool.query('SELECT created_by FROM exams WHERE id=$1', [req.params.examId]);
+    if (!examRows.length || examRows[0].created_by !== req.user.id)
+      return res.status(403).json({ error: 'Forbidden: you do not own this exam' });
+  }
   const { rows } = await pool.query(
     `SELECT ${ATTEMPT_COLS} FROM attempts WHERE exam_id=$1`,
     [req.params.examId]
@@ -280,6 +399,25 @@ app.get('/api/attempts/check/:studentId/:examId', auth, wrap(async (req, res) =>
     [studentId, examId]
   );
   res.json({ attempted: rows.length > 0 });
+}));
+
+// Manual grading override — lets a teacher adjust the auto-graded score and leave feedback
+app.patch('/api/attempts/:id', auth, requireRole('teacher', 'admin'), wrap(async (req, res) => {
+  const { score, feedback } = req.body;
+  if (typeof score !== 'number' || score < 0 || score > 100)
+    return res.status(400).json({ error: 'score must be a number between 0 and 100' });
+
+  const { rows: atRows } = await pool.query('SELECT exam_id FROM attempts WHERE id=$1', [req.params.id]);
+  if (!atRows.length) return res.status(404).json({ error: 'Attempt not found' });
+
+  const { rows: exRows } = await pool.query('SELECT passing_score FROM exams WHERE id=$1', [atRows[0].exam_id]);
+  const passed = score >= exRows[0].passing_score;
+
+  const { rows } = await pool.query(
+    `UPDATE attempts SET score=$1, passed=$2, feedback=$3 WHERE id=$4 RETURNING ${ATTEMPT_COLS}`,
+    [score, passed, feedback ?? null, req.params.id]
+  );
+  res.json(rows[0]);
 }));
 
 // ── Question Bank ─────────────────────────────────────────────────────────────
@@ -336,6 +474,118 @@ app.delete('/api/questions/:id', auth, requireRole('teacher', 'admin'), wrap(asy
   res.json({ success: true });
 }));
 
+// ── AI Question Generation ──────────────────────────────────────────────────────
+// Structured-outputs schema: MC-only fields (options/correctOption) and
+// open-only fields (keywords) are both present but nullable, since JSON Schema
+// structured outputs don't support conditional/discriminated-union requiredness.
+const QUESTION_GEN_SCHEMA = {
+  type: 'object',
+  properties: {
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          type:          { type: 'string', enum: ['multiple-choice', 'open'] },
+          text:          { type: 'string' },
+          topic:         { type: 'string' },
+          options:       { type: ['array', 'null'], items: { type: 'string' } },
+          correctOption: { type: ['integer', 'null'] },
+          keywords:      { type: ['array', 'null'], items: { type: 'string' } },
+        },
+        required: ['type', 'text', 'topic', 'options', 'correctOption', 'keywords'],
+      },
+    },
+  },
+  required: ['questions'],
+};
+
+// The model's output feeds directly into auto-grading (correctOption / keywords),
+// so nothing from it is trusted without validation — malformed items are dropped
+// rather than saved as a broken exam question.
+// עיקרון חשוב: אף פעם לא סומכים "בעיוורון" על תשובת מודל שפה (גם עם structured
+// output) - כאן בודקים כל שדה בנפרד (יש טקסט? יש לפחות 2 אופציות ב-MC? האינדקס
+// של correctOption בטווח החוקי?) ומשליכים שאלה שלא עברה את כל הבדיקות, במקום
+// לתת לה "להישבר" בשקט מאוחר יותר בזמן הבחינה עצמה.
+function sanitizeGeneratedQuestion(q, fallbackTopic) {
+  if (!q || typeof q.text !== 'string' || !q.text.trim()) return null;
+  const topic = (typeof q.topic === 'string' && q.topic.trim()) || fallbackTopic;
+
+  if (q.type === 'open') {
+    const keywords = Array.isArray(q.keywords)
+      ? q.keywords.filter(k => typeof k === 'string' && k.trim())
+      : [];
+    if (!keywords.length) return null;
+    return { type: 'open', text: q.text.trim(), topic, keywords };
+  }
+
+  const options = Array.isArray(q.options)
+    ? q.options.filter(o => typeof o === 'string' && o.trim())
+    : [];
+  if (options.length < 2) return null;
+  if (!Number.isInteger(q.correctOption) || q.correctOption < 0 || q.correctOption >= options.length) return null;
+  return { type: 'multiple-choice', text: q.text.trim(), topic, options, correctOption: q.correctOption };
+}
+
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+
+async function generateQuestionsWithAI(topic, count, type) {
+  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const typeInstruction = type === 'mixed'
+    ? 'a mix of "multiple-choice" and "open" questions'
+    : `only "${type}" questions`;
+
+  const interaction = await genAI.interactions.create({
+    model: GEMINI_MODEL,
+    input: `Generate ${count} exam question(s) about "${topic}" for a university-level course. Use ${typeInstruction}.
+
+For "multiple-choice" questions: provide exactly 4 plausible options in "options" and the 0-based index of the correct one in "correctOption"; leave "keywords" null.
+For "open" questions: provide 3-6 short lowercase "keywords" that a correct free-text answer should contain; leave "options" and "correctOption" null.
+
+Each question's "topic" field should be a short label (e.g. "${topic}"). Questions must be factually correct, unambiguous, and have exactly one defensible correct answer.`,
+    response_format: {
+      type: 'text',
+      mime_type: 'application/json',
+      schema: QUESTION_GEN_SCHEMA,
+    },
+  });
+
+  if (!interaction.output_text) throw new Error('AI response contained no content.');
+
+  const parsed = JSON.parse(interaction.output_text);
+  return Array.isArray(parsed.questions) ? parsed.questions : [];
+}
+
+app.post('/api/questions/generate', auth, requireRole('teacher', 'admin'), aiGenerationLimiter, wrap(async (req, res) => {
+  const { topic, count = 5, type = 'mixed' } = req.body;
+  if (typeof topic !== 'string' || !topic.trim())
+    return res.status(400).json({ error: 'topic is required' });
+  const n = Number(count);
+  if (!Number.isInteger(n) || n < 1 || n > 10)
+    return res.status(400).json({ error: 'count must be an integer between 1 and 10' });
+  if (!['multiple-choice', 'open', 'mixed'].includes(type))
+    return res.status(400).json({ error: 'type must be multiple-choice, open, or mixed' });
+  if (!process.env.GEMINI_API_KEY)
+    return res.status(503).json({ error: 'AI question generation is not configured on this server' });
+
+  let raw;
+  try {
+    raw = await generateQuestionsWithAI(topic.trim(), n, type);
+  } catch (err) {
+    console.error('AI question generation failed:', err.message);
+    return res.status(502).json({ error: 'AI question generation is temporarily unavailable. Please try again later.' });
+  }
+  const sanitized = raw
+    .map(q => sanitizeGeneratedQuestion(q, topic.trim()))
+    .filter(Boolean)
+    .map((q, i) => ({ ...q, id: `ai_${Date.now()}_${i}` }));
+
+  if (!sanitized.length)
+    return res.status(502).json({ error: 'The AI did not return any valid questions — try again or rephrase the topic.' });
+
+  res.json({ questions: sanitized });
+}));
+
 // ── Utility ───────────────────────────────────────────────────────────────────
 
 app.post('/api/db/reset', auth, wrap(async (_req, res) => {
@@ -346,7 +596,7 @@ app.post('/api/db/reset', auth, wrap(async (_req, res) => {
     for (const u of SEED_USERS)
       await client.query(
         'INSERT INTO users (id, username, password, role, name, status) VALUES ($1,$2,$3,$4,$5,$6)',
-        [u.id, u.username, u.password, u.role, u.name, u.status ?? 'active']
+        [u.id, u.username, await bcrypt.hash(u.password, BCRYPT_ROUNDS), u.role, u.name, u.status ?? 'active']
       );
     for (const e of SEED_EXAMS)
       await client.query(
@@ -389,6 +639,10 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// migrate() רץ בכל עליית שרת (למטה, בתוך server.listen). כל פקודה כאן היא
+// "אידמפוטנטית" (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS) - כלומר בטוח להריץ
+// אותה שוב ושוב בלי שתישבר אם העמודה/טבלה כבר קיימת. זו הדרך הפשוטה של הפרויקט
+// ל"מיגרציות סכימה" בלי כלי migration ייעודי כמו Flyway/Prisma.
 async function migrate() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS question_bank (
@@ -412,10 +666,14 @@ async function migrate() {
   await pool.query(`ALTER TABLE exams ADD COLUMN IF NOT EXISTS end_date   TIMESTAMPTZ`);
   // User status for teacher approval (idempotent)
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`);
+  // Teacher feedback / manual grading override (idempotent)
+  await pool.query(`ALTER TABLE attempts ADD COLUMN IF NOT EXISTS feedback TEXT`);
+  // Live Monitor: tab-switch count captured at submit time (idempotent)
+  await pool.query(`ALTER TABLE attempts ADD COLUMN IF NOT EXISTS tab_switch_count INT NOT NULL DEFAULT 0`);
   console.log('Migration complete');
 }
 
-app.listen(PORT, async () => {
+server.listen(PORT, async () => {
   console.log(`ExamsApp server running on port ${PORT}`);
   await migrate().catch(err => console.error('Migration failed:', err.message));
 });

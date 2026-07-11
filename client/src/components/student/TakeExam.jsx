@@ -5,6 +5,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
+import Storage from '../../services/StorageService';
+import SocketService from '../../services/SocketService';
 
 const fmt = (secs) =>
   `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
@@ -12,9 +14,9 @@ const fmt = (secs) =>
 const isAnswered = (q, a) =>
   q.type === 'open' ? (typeof a === 'string' && a.trim().length > 0) : a !== null;
 
-const openMatches = (q, a) => {
+const openMatches = (keywords, a) => {
   const text = String(a ?? '').toLowerCase();
-  return (q.keywords ?? []).some(kw => text.includes(kw.toLowerCase()));
+  return (keywords ?? []).some(kw => text.includes(kw.toLowerCase()));
 };
 
 const TakeExam = ({ user, examId, onNavigate }) => {
@@ -24,23 +26,72 @@ const TakeExam = ({ user, examId, onNavigate }) => {
   const [phase,      setPhase]      = useState('loading'); // loading | taking | result
   const [result,     setResult]     = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [startedAt,  setStartedAt]  = useState(null);
   const timerRef = useRef(null);
+
+  const autosaveKey = `autosave_${examId}_${user.id}`;
 
   // ── Load exam ─────────────────────────────────────────────────────────────
   useEffect(() => {
+    let joinHandler = null;
+
     Api.getExamById(examId)
       .then(data => {
         setExam(data);
-        setAnswers(new Array(data.questions.length).fill(null));
-        setTimeLeft(data.duration * 60);
+
+        const saved = Storage.get(autosaveKey);
+        const now = Date.now();
+        const remaining = saved
+          ? data.duration * 60 - Math.floor((now - saved.startedAt) / 1000)
+          : null;
+
+        if (saved && Array.isArray(saved.answers) && saved.answers.length === data.questions.length && remaining > 0) {
+          setAnswers(saved.answers);
+          setStartedAt(saved.startedAt);
+          setTimeLeft(remaining);
+          Notify.info('Restored your in-progress answers.');
+        } else {
+          if (saved) Storage.remove(autosaveKey); // stale/expired autosave
+          setAnswers(new Array(data.questions.length).fill(null));
+          setStartedAt(now);
+          setTimeLeft(data.duration * 60);
+        }
         setPhase('taking');
+
+        // Live Monitor: join the exam's monitoring room. 'connect' also fires on every
+        // reconnect (Socket.IO doesn't replay prior emits by itself), so re-join there too.
+        SocketService.connect();
+        joinHandler = () => SocketService.emit('exam:join', { examId, totalQuestions: data.questions.length });
+        SocketService.on('connect', joinHandler);
+        if (SocketService.getSocket()?.connected) joinHandler();
       })
       .catch(err => {
         Notify.error('Could not load exam.');
         Logger.error('TakeExam.load', err.message);
         onNavigate('available-exams');
       });
+
+    return () => {
+      if (joinHandler) SocketService.off('connect', joinHandler);
+    };
   }, [examId]);
+
+  // ── Auto-save ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'taking' || !startedAt) return;
+    Storage.set(autosaveKey, { answers, startedAt });
+
+    const answeredCount = exam.questions.filter((q, i) => isAnswered(q, answers[i])).length;
+    SocketService.emit('exam:progress', { examId, answeredCount });
+  }, [answers, phase, startedAt]);
+
+  // ── Live Monitor: tab-switch / window-blur signal ────────────────────────
+  useEffect(() => {
+    if (phase !== 'taking') return;
+    const onBlur = () => SocketService.emit('exam:tab-blur', { examId });
+    window.addEventListener('blur', onBlur);
+    return () => window.removeEventListener('blur', onBlur);
+  }, [phase, examId]);
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const submit = useCallback((auto = false) => {
@@ -53,8 +104,9 @@ const TakeExam = ({ user, examId, onNavigate }) => {
       return a ?? -1; // -1 = unanswered MC → always wrong
     });
 
-    Api.submitAttempt({ examId, studentId: user.id, answers: finalAnswers, startedAt: new Date().toISOString() })
+    Api.submitAttempt({ examId, studentId: user.id, answers: finalAnswers, startedAt: new Date(startedAt).toISOString() })
       .then(attempt => {
+        Storage.remove(autosaveKey);
         setResult(attempt);
         setPhase('result');
         setSubmitting(false);
@@ -67,7 +119,7 @@ const TakeExam = ({ user, examId, onNavigate }) => {
         Logger.error('TakeExam.submit', err.message);
         setSubmitting(false);
       });
-  }, [answers, exam, examId, user.id]);
+  }, [answers, exam, examId, user.id, startedAt, autosaveKey]);
 
   // ── Timer ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -124,9 +176,10 @@ const TakeExam = ({ user, examId, onNavigate }) => {
         <div className="d-flex flex-column gap-3">
           {exam.questions.map((q, i) => {
             const ans = answers[i];
+            const key = result.answerKey?.[i] ?? {};
 
             if (q.type === 'open') {
-              const correct = openMatches(q, ans);
+              const correct = openMatches(key.keywords, ans);
               return (
                 <div key={q.id} className={`card border-${correct ? 'success' : 'danger'}`}>
                   <div className={`card-header bg-${correct ? 'success' : 'danger'} bg-opacity-10 d-flex justify-content-between`}>
@@ -135,7 +188,7 @@ const TakeExam = ({ user, examId, onNavigate }) => {
                   </div>
                   <div className="card-body small">
                     <p className="mb-1"><strong>Your answer:</strong> {ans || <em className="text-muted">no answer</em>}</p>
-                    <p className="mb-0 text-muted">Keywords: {(q.keywords ?? []).join(', ')}</p>
+                    <p className="mb-0 text-muted">Keywords: {(key.keywords ?? []).join(', ')}</p>
                   </div>
                 </div>
               );
@@ -143,7 +196,7 @@ const TakeExam = ({ user, examId, onNavigate }) => {
 
             // multiple-choice
             const selected = typeof ans === 'number' ? ans : -1;
-            const correct  = q.correctOption;
+            const correct  = key.correctOption;
             const isRight  = selected === correct;
             return (
               <div key={q.id} className={`card border-${isRight ? 'success' : 'danger'}`}>

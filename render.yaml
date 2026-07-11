@@ -15,6 +15,8 @@ services:
         generateValue: true
       - key: CLIENT_ORIGIN
         sync: false   # Set to your Static Site URL after deploy
+      - key: GEMINI_API_KEY
+        sync: false   # Optional — enables POST /api/questions/generate (AI-generated exam questions)
 
   # ── Frontend Static Site ────────────────────────────────────────────────────
   - type: static

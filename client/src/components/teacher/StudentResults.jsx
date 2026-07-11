@@ -2,45 +2,7 @@ import { useState, useEffect } from 'react';
 import Api from '../../api';
 import Notify from '../../services/NotifyService';
 import Logger from '../../services/LoggerService';
-
-const SCORE_BUCKETS = [
-  { label: '0–59',  min: 0,  max: 59  },
-  { label: '60–69', min: 60, max: 69  },
-  { label: '70–79', min: 70, max: 79  },
-  { label: '80–89', min: 80, max: 89  },
-  { label: '90–100',min: 90, max: 100 },
-];
-
-function ScoreChart({ attempts }) {
-  const counts = SCORE_BUCKETS.map(b =>
-    attempts.filter(a => a.score >= b.min && a.score <= b.max).length
-  );
-  const max = Math.max(...counts, 1);
-  return (
-    <div className="card shadow-sm mb-4">
-      <div className="card-header bg-light fw-semibold">Score Distribution</div>
-      <div className="card-body">
-        <div className="d-flex align-items-flex-end gap-2" style={{ height: 120, alignItems: 'flex-end' }}>
-          {SCORE_BUCKETS.map((b, i) => (
-            <div key={b.label} className="d-flex flex-column align-items-center flex-grow-1">
-              <span className="small text-muted mb-1">{counts[i]}</span>
-              <div
-                style={{
-                  width: '100%',
-                  height: `${Math.round((counts[i] / max) * 80) + 4}px`,
-                  background: i === 0 ? 'var(--danger)' : 'var(--primary)',
-                  borderRadius: '4px 4px 0 0',
-                  transition: 'height 0.3s',
-                }}
-              />
-              <span className="small text-muted mt-1" style={{ fontSize: '0.7rem' }}>{b.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+import ScoreChart from '../shared/ScoreChart';
 
 function exportCsv(attempts, usersMap, examTitle) {
   const rows = [
@@ -68,6 +30,10 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
   const [attempts,        setAttempts]        = useState([]);
   const [usersMap,        setUsersMap]        = useState({});
   const [loading,         setLoading]         = useState(false);
+  const [editingId,       setEditingId]       = useState(null);
+  const [editScore,       setEditScore]       = useState('');
+  const [editFeedback,    setEditFeedback]    = useState('');
+  const [saving,          setSaving]          = useState(false);
 
   useEffect(() => {
     Api.getExamsByTeacher(user.id).then(data => {
@@ -77,7 +43,7 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
 
     Api.getUsers().then(all => {
       setUsersMap(Object.fromEntries(all.map(u => [u.id, u])));
-    });
+    }).catch(() => Notify.error('Failed to load student names.'));
   }, []);
 
   useEffect(() => {
@@ -91,6 +57,35 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
         setLoading(false);
       });
   }, [selectedExamId]);
+
+  const startEdit = (a) => {
+    setEditingId(a.id);
+    setEditScore(String(a.score));
+    setEditFeedback(a.feedback ?? '');
+  };
+
+  const cancelEdit = () => setEditingId(null);
+
+  const saveEdit = (attemptId) => {
+    const score = Number(editScore);
+    if (Number.isNaN(score) || score < 0 || score > 100) {
+      Notify.error('Score must be a number between 0 and 100.');
+      return;
+    }
+    setSaving(true);
+    Api.gradeAttempt(attemptId, { score, feedback: editFeedback.trim() || null })
+      .then(updated => {
+        setAttempts(prev => prev.map(a => a.id === attemptId ? updated : a));
+        setEditingId(null);
+        setSaving(false);
+        Notify.success('Grade updated.');
+      })
+      .catch(err => {
+        Notify.error('Failed to update grade.');
+        Logger.error('StudentResults.saveEdit', err.message);
+        setSaving(false);
+      });
+  };
 
   const selectedExam = exams.find(e => e.id === selectedExamId);
   const avgScore  = attempts.length ? Math.round(attempts.reduce((s, a) => s + a.score, 0) / attempts.length) : 0;
@@ -160,23 +155,68 @@ const StudentResults = ({ user, examId: initialExamId, onNavigate }) => {
                   <th>Student</th>
                   <th>Score</th>
                   <th>Status</th>
+                  <th>Feedback</th>
                   <th>Submitted</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {attempts.map(a => (
-                  <tr key={a.id}>
-                    <td className="fw-semibold">{usersMap[a.studentId]?.name ?? a.studentId}</td>
-                    <td><strong>{a.score}%</strong></td>
-                    <td>
-                      <span className={`badge bg-${a.passed ? 'success' : 'danger'}`}>
-                        {a.passed ? 'Passed' : 'Failed'}
-                      </span>
-                    </td>
-                    <td className="text-muted small">
-                      {new Date(a.submittedAt).toLocaleString()}
-                    </td>
-                  </tr>
+                  editingId === a.id ? (
+                    <tr key={a.id}>
+                      <td className="fw-semibold">{usersMap[a.studentId]?.name ?? a.studentId}</td>
+                      <td style={{ maxWidth: 90 }}>
+                        <input
+                          type="number" min="0" max="100"
+                          className="form-control form-control-sm"
+                          value={editScore}
+                          onChange={e => setEditScore(e.target.value)}
+                        />
+                      </td>
+                      <td className="text-muted small">auto from score</td>
+                      <td>
+                        <textarea
+                          className="form-control form-control-sm"
+                          rows={2}
+                          placeholder="Feedback for the student…"
+                          value={editFeedback}
+                          onChange={e => setEditFeedback(e.target.value)}
+                        />
+                      </td>
+                      <td className="text-muted small">
+                        {new Date(a.submittedAt).toLocaleString()}
+                      </td>
+                      <td className="d-flex gap-1">
+                        <button className="btn btn-sm btn-success" disabled={saving} onClick={() => saveEdit(a.id)}>
+                          Save
+                        </button>
+                        <button className="btn btn-sm btn-outline-secondary" disabled={saving} onClick={cancelEdit}>
+                          Cancel
+                        </button>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={a.id}>
+                      <td className="fw-semibold">{usersMap[a.studentId]?.name ?? a.studentId}</td>
+                      <td><strong>{a.score}%</strong></td>
+                      <td>
+                        <span className={`badge bg-${a.passed ? 'success' : 'danger'}`}>
+                          {a.passed ? 'Passed' : 'Failed'}
+                        </span>
+                      </td>
+                      <td className="small text-muted" style={{ maxWidth: 240 }}>
+                        {a.feedback || <em>No feedback yet</em>}
+                      </td>
+                      <td className="text-muted small">
+                        {new Date(a.submittedAt).toLocaleString()}
+                      </td>
+                      <td>
+                        <button className="btn btn-sm btn-outline-primary" onClick={() => startEdit(a)}>
+                          Grade
+                        </button>
+                      </td>
+                    </tr>
+                  )
                 ))}
               </tbody>
             </table>

@@ -13,7 +13,7 @@ vi.mock('./services/AuthService', () => ({
   default: { getCurrentUser: vi.fn(), logout: vi.fn(), login: vi.fn() },
 }));
 vi.mock('./services/LoggerService', () => ({
-  default: { info: vi.fn() },
+  default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock('./services/NotifyService', () => ({
   default: {
@@ -26,7 +26,10 @@ const teacher = { id: 'u1', name: 'Dr. Smith', role: 'teacher' };
 const student = { id: 'u3', name: 'Alice',    role: 'student' };
 
 describe('App', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
 
   test('shows LoginPage when no user is logged in', () => {
     Auth.getCurrentUser.mockReturnValue(null);
@@ -96,6 +99,44 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /^teacher$/i }));
     fireEvent.submit(screen.getByRole('button', { name: /login as teacher/i }).closest('form'));
     await waitFor(() => expect(screen.getByText('Dr. Smith')).toBeInTheDocument());
+    expect(screen.getByText('ExamList')).toBeInTheDocument();
+  });
+
+  test('a hard refresh restores the last navigated page instead of the role default', () => {
+    Auth.getCurrentUser.mockReturnValue(teacher);
+    const { unmount } = render(<App />);
+    fireEvent.click(screen.getByText('Create Exam'));
+    expect(screen.getByText('ExamForm')).toBeInTheDocument();
+    unmount(); // simulates the component tree being torn down on a hard refresh
+
+    render(<App />); // simulates the fresh mount after reload
+    expect(screen.getByText('ExamForm')).toBeInTheDocument();
+  });
+
+  test('logging in resets any previously persisted page to the role default', async () => {
+    Auth.getCurrentUser.mockReturnValue(teacher);
+    const { unmount } = render(<App />);
+    fireEvent.click(screen.getByText('Create Exam'));
+    unmount();
+
+    Auth.getCurrentUser.mockReturnValue(null);
+    Auth.login.mockResolvedValue(teacher);
+    render(<App />);
+    fireEvent.change(screen.getByPlaceholderText('Enter username'), { target: { value: 'teacher1' } });
+    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'pass123' } });
+    fireEvent.submit(screen.getByRole('button', { name: /login as/i }).closest('form'));
+    await waitFor(() => expect(screen.getByText('ExamList')).toBeInTheDocument());
+  });
+
+  test('logout clears the persisted page', () => {
+    Auth.getCurrentUser.mockReturnValue(teacher);
+    const { unmount } = render(<App />);
+    fireEvent.click(screen.getByText('Create Exam'));
+    fireEvent.click(screen.getByRole('button', { name: /logout/i }));
+    unmount();
+
+    Auth.getCurrentUser.mockReturnValue(teacher);
+    render(<App />);
     expect(screen.getByText('ExamList')).toBeInTheDocument();
   });
 });

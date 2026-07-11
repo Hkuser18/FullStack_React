@@ -6,10 +6,10 @@ vi.mock('../../api', () => ({
   default: { getExamById: vi.fn(), submitAttempt: vi.fn() },
 }));
 vi.mock('../../services/NotifyService', () => ({
-  default: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+  default: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 vi.mock('../../services/LoggerService', () => ({
-  default: { info: vi.fn(), error: vi.fn() },
+  default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 const user = { id: 1, name: 'Alice', role: 'student' };
@@ -25,7 +25,10 @@ const exam = {
 };
 
 describe('TakeExam', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
 
   test('shows loading spinner while exam loads', () => {
     Api.getExamById.mockReturnValue(new Promise(() => {}));
@@ -106,5 +109,70 @@ describe('TakeExam', () => {
     await waitFor(() => screen.getByText('Math Quiz'));
     fireEvent.click(screen.getByRole('button', { name: /abandon/i }));
     expect(onNavigate).toHaveBeenCalledWith('available-exams');
+  });
+
+  test('auto-saves answers to localStorage as the student answers questions', async () => {
+    Api.getExamById.mockResolvedValue(exam);
+    render(<TakeExam user={user} examId="e1" onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('What is 2+2?'));
+    fireEvent.click(screen.getByText('4'));
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('etest_autosave_e1_1'));
+      expect(saved.answers).toEqual([1, null]);
+    });
+  });
+
+  test('restores in-progress answers from a prior session', async () => {
+    Api.getExamById.mockResolvedValue(exam);
+    localStorage.setItem('etest_autosave_e1_1', JSON.stringify({
+      answers: [1, null],
+      startedAt: Date.now() - 5000, // 5s into a 30min exam — still valid
+    }));
+    render(<TakeExam user={user} examId="e1" onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('What is 2+2?'));
+    expect(screen.getAllByText('Answered')).toHaveLength(1);
+  });
+
+  test('discards an expired autosave and starts a fresh attempt', async () => {
+    Api.getExamById.mockResolvedValue(exam);
+    localStorage.setItem('etest_autosave_e1_1', JSON.stringify({
+      answers: [1, null],
+      startedAt: Date.now() - 31 * 60 * 1000, // 31 minutes ago, exam duration is 30
+    }));
+    render(<TakeExam user={user} examId="e1" onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('What is 2+2?'));
+    expect(screen.getAllByText('Unanswered')).toHaveLength(2);
+  });
+
+  test('answer review uses the post-submit answerKey, not the pre-submit exam data', async () => {
+    // exam.questions here carries no correctOption/keywords — mirrors what the server now
+    // sends a student before they've submitted (see server.js's stripAnswerKey).
+    const strippedExam = {
+      ...exam,
+      questions: exam.questions.map(({ id, text, options }) => ({ id, text, options })),
+    };
+    Api.getExamById.mockResolvedValue(strippedExam);
+    Api.submitAttempt.mockResolvedValue({
+      score: 50, passed: false,
+      answerKey: [{ correctOption: 1, keywords: null }, { correctOption: 1, keywords: null }],
+    });
+    render(<TakeExam user={user} examId="e1" onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Math Quiz'));
+    fireEvent.click(screen.getByText('4'));  // correct answer to Q1
+    fireEvent.click(screen.getByText('7'));  // wrong answer to Q2 (correct is '6')
+    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    await waitFor(() => screen.getByText(/not passed/i));
+    expect(screen.getAllByText('[Correct answer]').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Your answer/).length).toBeGreaterThan(0);
+  });
+
+  test('clears the autosave entry after a successful submission', async () => {
+    Api.getExamById.mockResolvedValue(exam);
+    Api.submitAttempt.mockResolvedValue({ score: 100, passed: true });
+    render(<TakeExam user={user} examId="e1" onNavigate={vi.fn()} />);
+    await waitFor(() => screen.getByText('Math Quiz'));
+    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+    await waitFor(() => expect(screen.getByText(/you passed/i)).toBeInTheDocument());
+    expect(localStorage.getItem('etest_autosave_e1_1')).toBeNull();
   });
 });

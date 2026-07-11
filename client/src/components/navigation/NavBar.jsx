@@ -6,6 +6,7 @@ const NavBar = ({ user, onLogout, onToggleSidebar, sidebarOpen }) => (
         onClick={onToggleSidebar}
         aria-label="Toggle menu"
         aria-expanded={sidebarOpen}
+        aria-controls="sidebarMenu"
       >
         <span className={`hamburger-line${sidebarOpen ? ' open' : ''}`} />
         <span className={`hamburger-line${sidebarOpen ? ' open' : ''}`} />

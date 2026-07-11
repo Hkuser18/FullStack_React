@@ -1,8 +1,10 @@
 const TEACHER_ITEMS = [
   { key: 'my-exams',        label: 'My Exams',        icon: '📋' },
+  { key: 'live-monitor',    label: 'Live Monitor',    icon: '📡' },
   { key: 'create-exam',     label: 'Create Exam',     icon: '✏️'  },
   { key: 'question-bank',   label: 'Question Bank',   icon: '🗂️'  },
   { key: 'student-results', label: 'Student Results', icon: '📊' },
+  { key: 'analytics',       label: 'Analytics',       icon: '📈' },
 ];
 
 const STUDENT_ITEMS = [
@@ -22,7 +24,11 @@ const SideMenu = ({ role, activePage, onNavigate, isOpen }) => {
               : STUDENT_ITEMS;
 
   return (
-    <aside className={`app-sidebar${isOpen ? ' open' : ''}`}>
+    <aside
+      className={`app-sidebar offcanvas-md offcanvas-start${isOpen ? ' show' : ''}`}
+      tabIndex="-1"
+      id="sidebarMenu"
+    >
       <div className="sidebar-header">
         <span>{ROLE_LABELS[role] ?? 'Panel'}</span>
       </div>
